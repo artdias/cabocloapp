@@ -1,0 +1,3044 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import { supabase, Atendimento, Contato, Pedido, ItemEstoque, ItemVendaPedido, isSupabaseConfigured, TipoEntidade, StatusCRM, StatusFinanceiro } from '@/lib/supabase';
+import {
+  Mic,
+  Square,
+  Sparkles,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  User,
+  Package,
+  Calendar,
+  FileText,
+  Clock,
+  Volume2,
+  Plus,
+  MessageCircle,
+  Users,
+  ShoppingBag,
+  DollarSign,
+  Edit3,
+  Phone,
+  AlertTriangle,
+  Send,
+  Check,
+  X,
+  BellRing,
+  UserPlus,
+  Truck,
+  MapPin,
+  Home,
+  Trash2,
+  FileEdit,
+  Save,
+  Inbox,
+  Wifi,
+  WifiOff,
+  RotateCcw,
+  Sun,
+  Cloud,
+  CloudRain,
+  Droplets,
+  Wind,
+  ChevronDown,
+  ChevronUp
+} from 'lucide-react';
+
+type TabType = 'voz' | 'contatos' | 'pedidos' | 'terceiros' | 'financeiro';
+
+export interface RascunhoVoz {
+  id: string;
+  texto: string;
+  created_at: string;
+}
+
+export interface LembreteRespondidoItem {
+  id: string;
+  nome: string;
+  tipo: 'estoque' | 'prospect';
+  detalhe: string;
+  data_resposta: string;
+}
+
+export interface DadosClima {
+  cidade: string;
+  temp: number;
+  condicao: string;
+  umidade: number;
+  chuvaProb: number;
+  vento: string;
+  previsaoDias: { dia: string; tempMax: number; icone: string }[];
+}
+
+const CLIMA_INICIAL: DadosClima = {
+  cidade: 'Montanha - ES',
+  temp: 28,
+  condicao: 'Sol com Nuvens',
+  umidade: 62,
+  chuvaProb: 10,
+  vento: '14 km/h SE',
+  previsaoDias: [
+    { dia: 'Hoje', tempMax: 29, icone: '☀️' },
+    { dia: 'Amanhã', tempMax: 30, icone: '🌤️' },
+    { dia: 'Sex', tempMax: 27, icone: '🌧️' },
+    { dia: 'Sáb', tempMax: 28, icone: '☀️' },
+  ],
+};
+
+// Dados de Exemplo para Demonstração Imediata
+const DEMO_CONTATOS: Contato[] = [
+  {
+    id: 'demo-1',
+    tipo: 'cliente',
+    status_crm: 'cliente_ativo',
+    nome: 'João Paulo - Fazenda Bela Vista',
+    telefone: '27999887766',
+    cidade: 'Vila Velha',
+    endereco_fazenda: 'Rodovia do Sol, Km 18, Zona Rural, Vila Velha - ES',
+    quantidade_animais: '120 cabeças de gado',
+    observacao: 'Comprou 10 toneladas de silagem de milho. Estoque acabando esta semana!',
+    created_at: '2026-09-01T10:00:00Z',
+  },
+  {
+    id: 'demo-2',
+    tipo: 'cliente',
+    status_crm: 'possibilidade',
+    nome: 'Marcos Ribeiro - Sítio São José',
+    telefone: '27998881122',
+    cidade: 'Linhares',
+    endereco_fazenda: 'Estrada do Guaraná, S/N, Linhares - ES',
+    quantidade_animais: '45 vacas de leite',
+    observacao: 'Cotou 50 sacos de silagem de sorgo. Retornar ligação esta semana!',
+    created_at: '2026-09-25T14:30:00Z',
+  },
+  {
+    id: 'demo-terc-1',
+    tipo: 'terceiro',
+    status_crm: 'parceiro',
+    nome: 'Sebastião Fretes (Caminhão Toco)',
+    telefone: '27995551122',
+    cidade: 'Viana',
+    capacidade_carga_toneladas: 5,
+    tipo_veiculo: 'Caminhão Toco (5t)',
+    observacao: 'Disponível para fretes curtos na grande Vitória e Viana.',
+    created_at: '2026-09-10T08:00:00Z',
+  },
+  {
+    id: 'demo-terc-2',
+    tipo: 'terceiro',
+    status_crm: 'parceiro',
+    nome: 'Gilmar Transportes (Caminhão Truck)',
+    telefone: '27994443322',
+    cidade: 'Linhares',
+    capacidade_carga_toneladas: 14,
+    tipo_veiculo: 'Truck 3 Eixos (14t)',
+    observacao: 'Freteiro com basculante de alta capacidade.',
+    created_at: '2026-09-12T09:00:00Z',
+  },
+  {
+    id: 'demo-terc-3',
+    tipo: 'terceiro',
+    status_crm: 'parceiro',
+    nome: 'TransSilagem Bitrem',
+    telefone: '27993332211',
+    cidade: 'Cachoeiro',
+    capacidade_carga_toneladas: 30,
+    tipo_veiculo: 'Carreta Bitrem (30t)',
+    observacao: 'Transportes de grande volume para fazendas de grande porte.',
+    created_at: '2026-09-14T11:00:00Z',
+  },
+];
+
+const DEMO_PEDIDOS: Pedido[] = [
+  {
+    id: 'demo-ped-1',
+    contato_id: 'demo-1',
+    nome_cliente: 'João Paulo - Fazenda Bela Vista',
+    produto: 'Silagem de Milho',
+    quantidade: '10 toneladas',
+    quantidade_toneladas_num: 10,
+    valor_total: 4500.0,
+    data_compra: '2026-09-01',
+    data_previsao_fim_estoque: '2026-10-03',
+    status_financeiro: 'pago',
+    tipo_operacao: 'venda',
+    observacao: 'Entrega pendente na Rodovia do Sol, Km 18',
+  },
+  {
+    id: 'demo-ped-2',
+    contato_id: 'demo-2',
+    nome_cliente: 'Marcos Ribeiro - Sítio São José',
+    produto: 'Silagem de Sorgo',
+    quantidade: '50 sacos (approx 2.5t)',
+    quantidade_toneladas_num: 2.5,
+    valor_total: 1250.0,
+    data_compra: '2026-09-25',
+    data_previsao_fim_estoque: '2026-10-25',
+    status_financeiro: 'pendente',
+    tipo_operacao: 'venda',
+    observacao: 'Aguardando confirmação de entrega em Linhares',
+  },
+];
+
+const DEMO_ESTOQUE: ItemEstoque[] = [
+  {
+    id: 'est-1',
+    nome: 'Silagem de Milho Premium',
+    quantidade_disponivel: 140.0,
+    unidade_medida: 'toneladas',
+    preco_unitario: 450.0,
+    alerta_minimo: 25.0,
+    observacao: 'Safra nova, alta digestibilidade e grão inteiro.',
+  },
+  {
+    id: 'est-2',
+    nome: 'Silagem de Sorgo Forrageiro',
+    quantidade_disponivel: 85.0,
+    unidade_medida: 'toneladas',
+    preco_unitario: 380.0,
+    alerta_minimo: 15.0,
+    observacao: 'Excelente custo-benefício para gado de corte e leite.',
+  },
+  {
+    id: 'est-3',
+    nome: 'Silagem de Capim Açú',
+    quantidade_disponivel: 60.0,
+    unidade_medida: 'toneladas',
+    preco_unitario: 320.0,
+    alerta_minimo: 10.0,
+    observacao: 'Rica em fibra para suplementação seca.',
+  },
+  {
+    id: 'est-4',
+    nome: 'Saco de Silagem de Milho (30kg)',
+    quantidade_disponivel: 450.0,
+    unidade_medida: 'sacos',
+    preco_unitario: 25.0,
+    alerta_minimo: 50.0,
+    observacao: 'Embalagem reforçada selada à vácuo.',
+  },
+];
+
+export default function CabocloAgroCRM() {
+  const [activeTab, setActiveTab] = useState<TabType>('voz');
+  const [status, setStatus] = useState<string>('Pronto para gravar');
+  const [transcript, setTranscript] = useState<string>('');
+  const [isRecording, setIsRecording] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Estado do Estoque e Sub-abas de Pedidos
+  const [estoque, setEstoque] = useState<ItemEstoque[]>(DEMO_ESTOQUE);
+  const [subAbaPedidos, setSubAbaPedidos] = useState<'pedidos' | 'estoque'>('pedidos');
+  const [isNovoPedidoModalOpen, setIsNovoPedidoModalOpen] = useState<boolean>(false);
+  const [isNovoItemEstoqueModalOpen, setIsNovoItemEstoqueModalOpen] = useState<boolean>(false);
+
+  // Form State para Novo Pedido com Seleção de Cliente e Itens
+  const [novoPedidoForm, setNovoPedidoForm] = useState<{
+    clienteId: string;
+    terceiroId: string;
+    itens: { estoqueId: string; quantidade: string }[];
+    dataCompra: string;
+    diasEstoqueFim: string;
+    statusFinanceiro: StatusFinanceiro;
+    observacao: string;
+  }>({
+    clienteId: '',
+    terceiroId: '',
+    itens: [{ estoqueId: 'est-1', quantidade: '10' }],
+    dataCompra: new Date().toISOString().split('T')[0],
+    diasEstoqueFim: '30',
+    statusFinanceiro: 'pendente',
+    observacao: '',
+  });
+
+  // Form State para Entrada / Cadastro de Novo Item no Estoque
+  const [novoItemEstoqueForm, setNovoItemEstoqueForm] = useState<{
+    nome: string;
+    quantidade: string;
+    unidade: string;
+    preco: string;
+    alerta: string;
+    observacao: string;
+  }>({
+    nome: '',
+    quantidade: '',
+    unidade: 'toneladas',
+    preco: '',
+    alerta: '10',
+    observacao: '',
+  });
+
+  // Rascunhos de Voz Off-line
+  const [rascunhos, setRascunhos] = useState<RascunhoVoz[]>([]);
+  const [isRascunhosModalOpen, setIsRascunhosModalOpen] = useState<boolean>(false);
+
+  // Controle de Edição de Registro Existente
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingEstoqueId, setEditingEstoqueId] = useState<string | null>(null);
+  const [editingPedidoId, setEditingPedidoId] = useState<string | null>(null);
+
+  // Modal de Cadastro Manual / Edição
+  const [isManualModalOpen, setIsManualModalOpen] = useState<boolean>(false);
+
+  // Form State para Confirmação de Voz, Cadastro ou Edição Manual
+  const [formData, setFormData] = useState<{
+    tipo: TipoEntidade;
+    status_crm: StatusCRM;
+    nome: string;
+    telefone: string;
+    endereco_fazenda: string;
+    quantidade_animais: string;
+    capacidade_carga_toneladas: string;
+    tipo_veiculo: string;
+    produto: string;
+    quantidade: string;
+    valor_total: string;
+    data_proximo_contato: string;
+    data_previsao_fim_estoque: string;
+    observacao: string;
+  } | null>(null);
+
+  // Listas de Dados
+  const [contatos, setContatos] = useState<Contato[]>(DEMO_CONTATOS);
+  const [pedidos, setPedidos] = useState<Pedido[]>(DEMO_PEDIDOS);
+  const [loading, setLoading] = useState<boolean>(false);
+
+  // Filtros de Contatos
+  const [filtroContato, setFiltroContato] = useState<string>('todos');
+
+  // Modal WhatsApp
+  const [whatsappModal, setWhatsappModal] = useState<{
+    isOpen: boolean;
+    telefone: string;
+    mensagem: string;
+    nomeCliente: string;
+    reminderId?: string;
+    reminderTipo?: 'estoque' | 'prospect';
+    reminderDetalhe?: string;
+  }>({
+    isOpen: false,
+    telefone: '',
+    mensagem: '',
+    nomeCliente: '',
+  });
+
+  // Estado para Gerenciamento de Lembretes (Adiar, Excluir, Respondidos)
+  const [lembretesAdiados, setLembretesAdiados] = useState<Record<string, string>>({});
+  const [lembretesExcluidos, setLembretesExcluidos] = useState<string[]>([]);
+  const [lembretesRespondidos, setLembretesRespondidos] = useState<LembreteRespondidoItem[]>([]);
+  const [abaLembretes, setAbaLembretes] = useState<'pendentes' | 'respondidos'>('pendentes');
+  const [adiarModal, setAdiarModal] = useState<{ id: string; nome: string } | null>(null);
+  // Estado para Sanfona (Expandir/Recolher Detalhes dos Contatos)
+  const [contatosExpandidos, setContatosExpandidos] = useState<Record<string, boolean>>({});
+
+  const toggleExpandContato = (id: string) => {
+    setContatosExpandidos((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const [clima, setClima] = useState<DadosClima>(CLIMA_INICIAL);
+  const [isOnline, setIsOnline] = useState<boolean>(true);
+
+  const recognitionRef = useRef<any>(null);
+  const hojeStr = new Date().toISOString().split('T')[0];
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setIsOnline(navigator.onLine);
+      carregarClimaReal();
+
+      const handleOnline = () => {
+        setIsOnline(true);
+        carregarTodosDados();
+        carregarClimaReal();
+      };
+
+      const handleOffline = () => {
+        setIsOnline(false);
+      };
+
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+
+      // Carrega rascunhos salvos no localStorage
+      const salvos = localStorage.getItem('caboclo_rascunhos_voz');
+      if (salvos) {
+        try {
+          setRascunhos(JSON.parse(salvos));
+        } catch (e) {}
+      }
+
+      // Carrega dados de lembretes salvos (Adiados, Excluídos e Respondidos)
+      const salvosAdiados = localStorage.getItem('caboclo_lembretes_adiados');
+      if (salvosAdiados) {
+        try { setLembretesAdiados(JSON.parse(salvosAdiados)); } catch (e) {}
+      }
+
+      const salvosExcluidos = localStorage.getItem('caboclo_lembretes_excluidos');
+      if (salvosExcluidos) {
+        try { setLembretesExcluidos(JSON.parse(salvosExcluidos)); } catch (e) {}
+      }
+
+      const salvosRespondidos = localStorage.getItem('caboclo_lembretes_respondidos');
+      if (salvosRespondidos) {
+        try { setLembretesRespondidos(JSON.parse(salvosRespondidos)); } catch (e) {}
+      }
+
+      const salvosEstoque = localStorage.getItem('caboclo_estoque');
+      if (salvosEstoque) {
+        try { setEstoque(JSON.parse(salvosEstoque)); } catch (e) {}
+      }
+
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'pt-BR';
+
+        recognition.onresult = (event: any) => {
+          let currentTranscript = '';
+          for (let i = 0; i < event.results.length; i++) {
+            currentTranscript += event.results[i][0].transcript;
+          }
+          setTranscript(currentTranscript);
+        };
+
+        recognition.onerror = (event: any) => {
+          if (event.error === 'no-speech') {
+            setIsRecording(false);
+            setStatus((prev) => (prev === '🎙️ Ouvindo...' ? 'Pronto para gravar' : prev));
+            return;
+          }
+          if (event.error === 'aborted') {
+            setIsRecording(false);
+            return;
+          }
+          setIsRecording(false);
+        };
+
+        recognition.onend = () => {
+          setIsRecording(false);
+          setStatus((prev) => (prev === '🎙️ Ouvindo...' ? 'Pronto para gravar' : prev));
+        };
+
+        recognitionRef.current = recognition;
+      }
+
+      return () => {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      };
+    }
+
+    carregarTodosDados();
+  }, []);
+
+  const carregarTodosDados = async () => {
+    if (!isSupabaseConfigured) return;
+
+    setLoading(true);
+    try {
+      const { data: dataContatos } = await supabase
+        .from('contatos')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (dataContatos && dataContatos.length > 0) setContatos(dataContatos);
+
+      const { data: dataPedidos } = await supabase
+        .from('pedidos')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (dataPedidos && dataPedidos.length > 0) setPedidos(dataPedidos);
+    } catch (err) {
+      console.warn('Erro ao carregar dados:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const carregarClimaReal = async () => {
+    try {
+      const res = await fetch(
+        'https://api.open-meteo.com/v1/forecast?latitude=-18.12&longitude=-40.36&current=temperature_2m,relative_humidity_2m,precipitation_probability_max,wind_speed_10m&daily=temperature_2m_max,precipitation_probability_max&timezone=America%2FSao_Paulo'
+      );
+      if (res.ok) {
+        const d = await res.json();
+        const cur = d.current;
+        const tempAtual = Math.round(cur.temperature_2m);
+        const umid = Math.round(cur.relative_humidity_2m);
+        const probChuva = d.daily?.precipitation_probability_max?.[0] || 10;
+        const ventoVel = Math.round(cur.wind_speed_10m || 12);
+
+        setClima({
+          cidade: 'Montanha - ES',
+          temp: tempAtual,
+          condicao: probChuva > 40 ? 'Nublado c/ Chuva' : probChuva > 20 ? 'Parcialmente Nublado' : 'Sol e Tempo Bom',
+          umidade: umid,
+          chuvaProb: probChuva,
+          vento: `${ventoVel} km/h`,
+          previsaoDias: [
+            { dia: 'Hoje', tempMax: Math.round(d.daily?.temperature_2m_max?.[0] || 29), icone: probChuva > 40 ? '🌧️' : '☀️' },
+            { dia: 'Amanhã', tempMax: Math.round(d.daily?.temperature_2m_max?.[1] || 30), icone: '🌤️' },
+            { dia: 'Sex', tempMax: Math.round(d.daily?.temperature_2m_max?.[2] || 27), icone: '☁️' },
+            { dia: 'Sáb', tempMax: Math.round(d.daily?.temperature_2m_max?.[3] || 28), icone: '☀️' },
+          ],
+        });
+      }
+    } catch (e) {
+      console.warn('Usando clima fallback:', e);
+    }
+  };
+
+  // Salvar Rascunho Manualmente ou por Falha da IA
+  const salvarRascunho = (textoParaSalvar?: string) => {
+    const textoFinal = textoParaSalvar || transcript;
+    if (!textoFinal || !textoFinal.trim()) return;
+
+    const novoRascunho: RascunhoVoz = {
+      id: `rascunho-${Date.now()}`,
+      texto: textoFinal,
+      created_at: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    const novaLista = [novoRascunho, ...rascunhos];
+    setRascunhos(novaLista);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_rascunhos_voz', JSON.stringify(novaLista));
+    }
+
+    setStatus('📝 Salvo em Rascunhos');
+    setErrorMessage('Áudio salvo na sua lista de Rascunhos! Você pode reprocessar ou cadastrar a qualquer momento.');
+  };
+
+  const excluirRascunho = (id: string) => {
+    const novaLista = rascunhos.filter((r) => r.id !== id);
+    setRascunhos(novaLista);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_rascunhos_voz', JSON.stringify(novaLista));
+    }
+  };
+
+  // Preenche cadastro manual a partir de um rascunho
+  const cadastrarAPartirDoRascunho = (rascunho: RascunhoVoz) => {
+    const prox = new Date();
+    prox.setDate(prox.getDate() + 7);
+
+    setEditingId(null);
+    setFormData({
+      tipo: 'cliente',
+      status_crm: 'cliente_ativo',
+      nome: '',
+      telefone: '',
+      endereco_fazenda: '',
+      quantidade_animais: '',
+      capacidade_carga_toneladas: '',
+      tipo_veiculo: '',
+      produto: 'Silagem de Milho',
+      quantidade: '',
+      valor_total: '',
+      data_proximo_contato: prox.toISOString().split('T')[0],
+      data_previsao_fim_estoque: '',
+      observacao: rascunho.texto,
+    });
+    setIsRascunhosModalOpen(false);
+    setIsManualModalOpen(true);
+  };
+
+  // Abrir Modal de Cadastro Manual Novo
+  const abrirCadastroManual = (tipoInicial: TipoEntidade = 'cliente') => {
+    const prox = new Date();
+    prox.setDate(prox.getDate() + 7);
+
+    setEditingId(null);
+    setFormData({
+      tipo: tipoInicial,
+      status_crm: tipoInicial === 'terceiro' ? 'parceiro' : 'cliente_ativo',
+      nome: '',
+      telefone: '',
+      endereco_fazenda: '',
+      quantidade_animais: '',
+      capacidade_carga_toneladas: tipoInicial === 'terceiro' ? '10' : '',
+      tipo_veiculo: tipoInicial === 'terceiro' ? 'Caminhão Truck (14t)' : '',
+      produto: tipoInicial === 'terceiro' ? '' : 'Silagem de Milho',
+      quantidade: '',
+      valor_total: '',
+      data_proximo_contato: prox.toISOString().split('T')[0],
+      data_previsao_fim_estoque: '',
+      observacao: '',
+    });
+    setIsManualModalOpen(true);
+  };
+
+  // Abrir Modal de Edição de Cadastro Existente
+  const abrirEdicaoContato = (contato: Contato) => {
+    const pedidoRelacionado = pedidos.find((p) => p.nome_cliente === contato.nome || p.contato_id === contato.id);
+
+    setEditingId(contato.id || null);
+    setFormData({
+      tipo: contato.tipo,
+      status_crm: contato.status_crm,
+      nome: contato.nome,
+      telefone: contato.telefone || '',
+      endereco_fazenda: contato.endereco_fazenda || '',
+      quantidade_animais: contato.quantidade_animais ? String(contato.quantidade_animais) : '',
+      capacidade_carga_toneladas: contato.capacidade_carga_toneladas ? String(contato.capacidade_carga_toneladas) : '',
+      tipo_veiculo: contato.tipo_veiculo || '',
+      produto: pedidoRelacionado?.produto || 'Silagem de Milho',
+      quantidade: pedidoRelacionado?.quantidade || '',
+      valor_total: pedidoRelacionado?.valor_total ? String(pedidoRelacionado.valor_total) : '',
+      data_proximo_contato: '',
+      data_previsao_fim_estoque: pedidoRelacionado?.data_previsao_fim_estoque || '',
+      observacao: contato.observacao || '',
+    });
+    setIsManualModalOpen(true);
+  };
+
+  // Excluir Cadastro
+  const excluirContato = async (id: string) => {
+    if (!confirm('Deseja realmente excluir este cadastro?')) return;
+
+    setContatos((prev) => prev.filter((c) => c.id !== id));
+    setIsManualModalOpen(false);
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('contatos').delete().eq('id', id);
+      } catch (e) {
+        console.warn('Excluído localmente:', e);
+      }
+    }
+  };
+
+  // Gravação de Voz
+  const startRecording = () => {
+    setErrorMessage(null);
+    setTranscript('');
+    setEditingId(null);
+    setFormData(null);
+
+    try {
+      recognitionRef.current?.start();
+      setIsRecording(true);
+      setStatus('🎙️ Ouvindo...');
+    } catch (err) {
+      setIsRecording(false);
+      setStatus('Pronto para gravar');
+    }
+  };
+
+  const stopRecordingAndProcess = async () => {
+    if (recognitionRef.current && isRecording) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+    }
+
+    if (!transcript || transcript.trim().length === 0) {
+      setErrorMessage('Nenhuma fala capturada. Tente falar novamente.');
+      setStatus('Pronto para gravar');
+      return;
+    }
+
+    await processAudioText(transcript);
+  };
+
+  const processAudioText = async (texto: string) => {
+    try {
+      setStatus('Processando com IA...');
+      setErrorMessage(null);
+
+      const response = await fetch('/api/entender-voz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Erro ao processar dados de voz com IA.');
+      }
+
+      const res = await response.json();
+
+      setEditingId(null);
+      setFormData({
+        tipo: res.tipo_entidade || 'cliente',
+        status_crm: res.status_crm || 'possibilidade',
+        nome: res.nome_cliente || '',
+        telefone: res.telefone || '',
+        endereco_fazenda: res.endereco_fazenda || '',
+        quantidade_animais: res.quantidade_animais || '',
+        capacidade_carga_toneladas: res.capacidade_carga_toneladas ? String(res.capacidade_carga_toneladas) : '',
+        tipo_veiculo: res.tipo_veiculo || '',
+        produto: res.produto || '',
+        quantidade: res.quantidade || '',
+        valor_total: res.valor_total ? String(res.valor_total) : '',
+        data_proximo_contato: res.data_proximo_contato || '',
+        data_previsao_fim_estoque: res.data_previsao_fim_estoque || '',
+        observacao: res.observacao || '',
+      });
+
+      setStatus('Conferir & Confirmar');
+    } catch (err: any) {
+      // SALVAMENTO AUTOMÁTICO EM RASCUNHO SE A IA OU INTERNET FALHAR!
+      salvarRascunho(texto);
+      setErrorMessage(
+        'Serviço de IA instável no momento. Seu áudio foi SALVO NOS RASCUNHOS! Você pode conferir e cadastrar mais tarde.'
+      );
+    }
+  };
+
+  // Salvar ou Atualizar Cadastro
+  const salvarCadastroConfirmado = async () => {
+    if (!formData || !formData.nome.trim()) {
+      alert('Por favor, informe ao menos o Nome.');
+      return;
+    }
+
+    const capNum = formData.capacidade_carga_toneladas ? parseFloat(formData.capacidade_carga_toneladas) : null;
+
+    if (editingId) {
+      setContatos((prev) =>
+        prev.map((c) =>
+          c.id === editingId
+            ? {
+                ...c,
+                tipo: formData.tipo,
+                status_crm: formData.status_crm,
+                nome: formData.nome,
+                telefone: formData.telefone || null,
+                endereco_fazenda: formData.endereco_fazenda || null,
+                quantidade_animais: formData.quantidade_animais || null,
+                capacidade_carga_toneladas: capNum,
+                tipo_veiculo: formData.tipo_veiculo || null,
+                observacao: formData.observacao || null,
+              }
+            : c
+        )
+      );
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase
+            .from('contatos')
+            .update({
+              tipo: formData.tipo,
+              status_crm: formData.status_crm,
+              nome: formData.nome,
+              telefone: formData.telefone || null,
+              endereco_fazenda: formData.endereco_fazenda || null,
+              quantidade_animais: formData.quantidade_animais || null,
+              capacidade_carga_toneladas: capNum,
+              tipo_veiculo: formData.tipo_veiculo || null,
+              observacao: formData.observacao || null,
+            })
+            .eq('id', editingId);
+        } catch (e) {
+          console.warn('Atualizado localmente:', e);
+        }
+      }
+    } else {
+      const novoContato: Contato = {
+        id: `local-${Date.now()}`,
+        tipo: formData.tipo,
+        status_crm: formData.status_crm,
+        nome: formData.nome,
+        telefone: formData.telefone || null,
+        endereco_fazenda: formData.endereco_fazenda || null,
+        quantidade_animais: formData.quantidade_animais || null,
+        capacidade_carga_toneladas: capNum,
+        tipo_veiculo: formData.tipo_veiculo || null,
+        observacao: formData.observacao || null,
+        created_at: new Date().toISOString(),
+      };
+
+      let qtdTonNum = 1.0;
+      if (formData.quantidade) {
+        const match = formData.quantidade.match(/(\d+([.,]\d+)?)/);
+        if (match) qtdTonNum = parseFloat(match[1].replace(',', '.'));
+      }
+
+      const novoPedido: Pedido = {
+        id: `local-ped-${Date.now()}`,
+        nome_cliente: formData.nome,
+        produto: formData.produto || 'Silagem',
+        quantidade: formData.quantidade || '1',
+        quantidade_toneladas_num: qtdTonNum,
+        valor_total: formData.valor_total ? parseFloat(formData.valor_total) : 0,
+        data_compra: hojeStr,
+        data_previsao_fim_estoque: formData.data_previsao_fim_estoque || null,
+        status_financeiro: 'pendente',
+        tipo_operacao: formData.tipo === 'fornecedor' ? 'compra' : 'venda',
+        observacao: formData.observacao || null,
+      };
+
+      setContatos((prev) => [novoContato, ...prev]);
+      if (formData.tipo !== 'terceiro' && (formData.produto || formData.quantidade)) {
+        setPedidos((prev) => [novoPedido, ...prev]);
+      }
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('contatos').insert([
+            {
+              tipo: formData.tipo,
+              status_crm: formData.status_crm,
+              nome: formData.nome,
+              telefone: formData.telefone || null,
+              endereco_fazenda: formData.endereco_fazenda || null,
+              quantidade_animais: formData.quantidade_animais || null,
+              capacidade_carga_toneladas: capNum,
+              tipo_veiculo: formData.tipo_veiculo || null,
+              observacao: formData.observacao || null,
+            },
+          ]);
+        } catch (e) {
+          console.warn('Salvo localmente:', e);
+        }
+      }
+    }
+
+    setStatus('✅ Salvo com sucesso!');
+    setIsManualModalOpen(false);
+
+    setTimeout(() => {
+      setEditingId(null);
+      setFormData(null);
+      setTranscript('');
+      setStatus('Pronto para gravar');
+    }, 1500);
+  };
+
+  // Funções de Criação de Pedido com Cliente + Itens do Estoque
+  const adicionarLinhaItemPedido = () => {
+    const itemPadrao = estoque[0]?.id || 'est-1';
+    setNovoPedidoForm((prev) => ({
+      ...prev,
+      itens: [...prev.itens, { estoqueId: itemPadrao, quantidade: '1' }],
+    }));
+  };
+
+  const removerLinhaItemPedido = (index: number) => {
+    setNovoPedidoForm((prev) => ({
+      ...prev,
+      itens: prev.itens.filter((_, idx) => idx !== index),
+    }));
+  };
+
+  // Abrir Modal de Edição de Pedido Existente
+  const abrirEdicaoPedido = (pedido: Pedido) => {
+    setEditingPedidoId(pedido.id || null);
+    setNovoPedidoForm({
+      clienteId: pedido.contato_id || pedido.nome_cliente || '',
+      terceiroId: pedido.terceiro_id || '',
+      itens: pedido.itens_venda && pedido.itens_venda.length > 0
+        ? pedido.itens_venda.map((i) => ({ estoqueId: i.estoque_id, quantidade: String(i.quantidade) }))
+        : [{ estoqueId: estoque[0]?.id || 'est-1', quantidade: String(pedido.quantidade_toneladas_num || 10) }],
+      dataCompra: pedido.data_compra || hojeStr,
+      diasEstoqueFim: '30',
+      statusFinanceiro: pedido.status_financeiro || 'pendente',
+      observacao: pedido.observacao || '',
+    });
+    setIsNovoPedidoModalOpen(true);
+  };
+
+  // Excluir Pedido
+  const excluirPedido = async (id: string) => {
+    if (!confirm('Deseja realmente excluir este pedido?')) return;
+
+    const novaLista = pedidos.filter((p) => p.id !== id);
+    setPedidos(novaLista);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_pedidos', JSON.stringify(novaLista));
+    }
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('pedidos').delete().eq('id', id);
+      } catch (e) {
+        console.warn('Excluído localmente:', e);
+      }
+    }
+  };
+
+  const salvarNovoPedido = async () => {
+    if (!novoPedidoForm.clienteId) {
+      alert('Por favor, selecione um cliente para o pedido.');
+      return;
+    }
+
+    const clienteObj = contatos.find((c) => c.id === novoPedidoForm.clienteId || c.nome === novoPedidoForm.clienteId);
+    const nomeClienteFinal = clienteObj?.nome || novoPedidoForm.clienteId;
+
+    let valorTotalCalculado = 0;
+    let totalToneladasNum = 0;
+    const descricoesItens: string[] = [];
+    const itensVendaResultado: ItemVendaPedido[] = [];
+
+    const novoEstoque = [...estoque];
+
+    for (const itemForm of novoPedidoForm.itens) {
+      const prodIndex = novoEstoque.findIndex((e) => e.id === itemForm.estoqueId);
+      if (prodIndex >= 0) {
+        const prod = novoEstoque[prodIndex];
+        const qtdNum = parseFloat(itemForm.quantidade) || 1;
+        const sub = qtdNum * prod.preco_unitario;
+
+        valorTotalCalculado += sub;
+        if (prod.unidade_medida === 'toneladas') {
+          totalToneladasNum += qtdNum;
+        } else {
+          totalToneladasNum += (qtdNum * 30) / 1000;
+        }
+
+        descricoesItens.push(`${prod.nome} (${qtdNum} ${prod.unidade_medida})`);
+        itensVendaResultado.push({
+          estoque_id: prod.id,
+          nome_produto: prod.nome,
+          quantidade: qtdNum,
+          unidade_medida: prod.unidade_medida,
+          preco_unitario: prod.preco_unitario,
+          subtotal: sub,
+        });
+
+        // Dar baixa automática no Estoque apenas se for novo pedido!
+        if (!editingPedidoId) {
+          novoEstoque[prodIndex] = {
+            ...prod,
+            quantidade_disponivel: Math.max(0, prod.quantidade_disponivel - qtdNum),
+          };
+        }
+      }
+    }
+
+    const dias = parseInt(novoPedidoForm.diasEstoqueFim) || 30;
+    const dPrevisao = new Date();
+    dPrevisao.setDate(dPrevisao.getDate() + dias);
+    const dataPrevisaoStr = dPrevisao.toISOString().split('T')[0];
+
+    if (editingPedidoId) {
+      const pedExistente = pedidos.find((p) => p.id === editingPedidoId);
+      const updatedPed: Pedido = {
+        ...pedExistente,
+        id: editingPedidoId,
+        contato_id: clienteObj?.id || null,
+        terceiro_id: novoPedidoForm.terceiroId || null,
+        nome_cliente: nomeClienteFinal,
+        produto: descricoesItens.join(' + ') || 'Silagem',
+        quantidade: descricoesItens.join(', '),
+        quantidade_toneladas_num: totalToneladasNum,
+        itens_venda: itensVendaResultado,
+        valor_total: valorTotalCalculado,
+        data_compra: novoPedidoForm.dataCompra || hojeStr,
+        data_previsao_fim_estoque: dataPrevisaoStr,
+        status_financeiro: novoPedidoForm.statusFinanceiro,
+        tipo_operacao: pedExistente?.tipo_operacao || 'venda',
+        observacao: novoPedidoForm.observacao || null,
+      };
+
+      const novaLista = pedidos.map((p) => (p.id === editingPedidoId ? updatedPed : p));
+      setPedidos(novaLista);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_pedidos', JSON.stringify(novaLista));
+      }
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase.from('pedidos').update(updatedPed).eq('id', editingPedidoId);
+        } catch (e) {
+          console.warn('Atualizado localmente:', e);
+        }
+      }
+
+      setEditingPedidoId(null);
+      setIsNovoPedidoModalOpen(false);
+      setStatus('✅ Pedido atualizado com sucesso!');
+      setTimeout(() => setStatus('Pronto para gravar'), 2000);
+      return;
+    }
+
+    const novoPed: Pedido = {
+      id: `ped-${Date.now()}`,
+      contato_id: clienteObj?.id || null,
+      terceiro_id: novoPedidoForm.terceiroId || null,
+      nome_cliente: nomeClienteFinal,
+      produto: descricoesItens.join(' + ') || 'Silagem',
+      quantidade: descricoesItens.join(', '),
+      quantidade_toneladas_num: totalToneladasNum,
+      itens_venda: itensVendaResultado,
+      valor_total: valorTotalCalculado,
+      data_compra: novoPedidoForm.dataCompra || hojeStr,
+      data_previsao_fim_estoque: dataPrevisaoStr,
+      status_financeiro: novoPedidoForm.statusFinanceiro,
+      tipo_operacao: 'venda',
+      observacao: novoPedidoForm.observacao || null,
+      created_at: new Date().toISOString(),
+    };
+
+    const novaListaPed = [novoPed, ...pedidos];
+    setPedidos(novaListaPed);
+    setEstoque(novoEstoque);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_pedidos', JSON.stringify(novaListaPed));
+      localStorage.setItem('caboclo_estoque', JSON.stringify(novoEstoque));
+    }
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('pedidos').insert([novoPed]);
+      } catch (e) {
+        console.warn('Salvo localmente:', e);
+      }
+    }
+
+    setIsNovoPedidoModalOpen(false);
+    setStatus('✅ Pedido criado e estoque atualizado!');
+    setTimeout(() => setStatus('Pronto para gravar'), 2000);
+  };
+
+  // Abrir Modal de Edição de Item do Estoque Existente
+  const abrirEdicaoEstoque = (item: ItemEstoque) => {
+    setEditingEstoqueId(item.id);
+    setNovoItemEstoqueForm({
+      nome: item.nome,
+      quantidade: String(item.quantidade_disponivel),
+      unidade: item.unidade_medida,
+      preco: String(item.preco_unitario),
+      alerta: String(item.alerta_minimo),
+      observacao: item.observacao || '',
+    });
+    setIsNovoItemEstoqueModalOpen(true);
+  };
+
+  // Excluir Item do Estoque
+  const excluirItemEstoque = async (id: string) => {
+    if (!confirm('Deseja realmente excluir este produto do estoque?')) return;
+
+    const novaLista = estoque.filter((item) => item.id !== id);
+    setEstoque(novaLista);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_estoque', JSON.stringify(novaLista));
+    }
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('estoque').delete().eq('id', id);
+      } catch (e) {
+        console.warn('Excluído localmente:', e);
+      }
+    }
+  };
+
+  const salvarNovoItemEstoque = async () => {
+    if (!novoItemEstoqueForm.nome.trim()) {
+      alert('Informe ao menos o Nome do produto no estoque.');
+      return;
+    }
+
+    if (editingEstoqueId) {
+      const novaListaEstoque = estoque.map((item) =>
+        item.id === editingEstoqueId
+          ? {
+              ...item,
+              nome: novoItemEstoqueForm.nome,
+              quantidade_disponivel: parseFloat(novoItemEstoqueForm.quantidade) || 0,
+              unidade_medida: novoItemEstoqueForm.unidade || 'toneladas',
+              preco_unitario: parseFloat(novoItemEstoqueForm.preco) || 0,
+              alerta_minimo: parseFloat(novoItemEstoqueForm.alerta) || 10,
+              observacao: novoItemEstoqueForm.observacao || null,
+            }
+          : item
+      );
+
+      setEstoque(novaListaEstoque);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_estoque', JSON.stringify(novaListaEstoque));
+      }
+
+      if (isSupabaseConfigured) {
+        try {
+          await supabase
+            .from('estoque')
+            .update({
+              nome: novoItemEstoqueForm.nome,
+              quantidade_disponivel: parseFloat(novoItemEstoqueForm.quantidade) || 0,
+              unidade_medida: novoItemEstoqueForm.unidade || 'toneladas',
+              preco_unitario: parseFloat(novoItemEstoqueForm.preco) || 0,
+              alerta_minimo: parseFloat(novoItemEstoqueForm.alerta) || 10,
+              observacao: novoItemEstoqueForm.observacao || null,
+            })
+            .eq('id', editingEstoqueId);
+        } catch (e) {
+          console.warn('Atualizado localmente:', e);
+        }
+      }
+
+      setEditingEstoqueId(null);
+    } else {
+      const novoItem: ItemEstoque = {
+        id: `est-${Date.now()}`,
+        nome: novoItemEstoqueForm.nome,
+        quantidade_disponivel: parseFloat(novoItemEstoqueForm.quantidade) || 0,
+        unidade_medida: novoItemEstoqueForm.unidade || 'toneladas',
+        preco_unitario: parseFloat(novoItemEstoqueForm.preco) || 0,
+        alerta_minimo: parseFloat(novoItemEstoqueForm.alerta) || 10,
+        observacao: novoItemEstoqueForm.observacao || null,
+      };
+
+      const novaListaEstoque = [novoItem, ...estoque];
+      setEstoque(novaListaEstoque);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_estoque', JSON.stringify(novaListaEstoque));
+      }
+    }
+
+    setIsNovoItemEstoqueModalOpen(false);
+    setNovoItemEstoqueForm({
+      nome: '',
+      quantidade: '',
+      unidade: 'toneladas',
+      preco: '',
+      alerta: '10',
+      observacao: '',
+    });
+  };
+
+  // Funções de Gerenciamento de Lembretes (Adiar, Excluir, Respondidos)
+  const isLembreteAtivo = (id?: string) => {
+    if (!id) return false;
+    if (lembretesExcluidos.includes(id)) return false;
+    if (lembretesRespondidos.some((r) => r.id === id)) return false;
+    const dataAdiado = lembretesAdiados[id];
+    if (dataAdiado && dataAdiado > hojeStr) return false;
+    return true;
+  };
+
+  const adiarLembrete = (id: string | undefined, numDias: number) => {
+    if (!id) return;
+    const d = new Date();
+    d.setDate(d.getDate() + numDias);
+    const dataStr = d.toISOString().split('T')[0];
+
+    const novosAdiados = { ...lembretesAdiados, [id]: dataStr };
+    setLembretesAdiados(novosAdiados);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_lembretes_adiados', JSON.stringify(novosAdiados));
+    }
+    setAdiarModal(null);
+  };
+
+  const excluirLembrete = (id?: string) => {
+    if (!id) return;
+    const novosExcluidos = [...lembretesExcluidos, id];
+    setLembretesExcluidos(novosExcluidos);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_lembretes_excluidos', JSON.stringify(novosExcluidos));
+    }
+  };
+
+  const marcarComoRespondido = (
+    id: string | undefined,
+    nome: string,
+    tipo: 'estoque' | 'prospect',
+    detalhe: string
+  ) => {
+    if (!id) return;
+    if (lembretesRespondidos.some((r) => r.id === id)) return;
+
+    const dataHoraStr =
+      new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) +
+      ' às ' +
+      new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+    const novoItem: LembreteRespondidoItem = {
+      id,
+      nome,
+      tipo,
+      detalhe,
+      data_resposta: dataHoraStr,
+    };
+
+    const novosRespondidos = [novoItem, ...lembretesRespondidos];
+    setLembretesRespondidos(novosRespondidos);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_lembretes_respondidos', JSON.stringify(novosRespondidos));
+    }
+  };
+
+  const restaurarLembreteRespondido = (id: string) => {
+    const novosRespondidos = lembretesRespondidos.filter((r) => r.id !== id);
+    setLembretesRespondidos(novosRespondidos);
+    const novosExcluidos = lembretesExcluidos.filter((exId) => exId !== id);
+    setLembretesExcluidos(novosExcluidos);
+    const novosAdiados = { ...lembretesAdiados };
+    delete novosAdiados[id];
+    setLembretesAdiados(novosAdiados);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_lembretes_respondidos', JSON.stringify(novosRespondidos));
+      localStorage.setItem('caboclo_lembretes_excluidos', JSON.stringify(novosExcluidos));
+      localStorage.setItem('caboclo_lembretes_adiados', JSON.stringify(novosAdiados));
+    }
+  };
+
+  // WhatsApp Message Generator
+  const abrirWhatsAppComMensagem = (
+    nome: string,
+    telefone?: string | null,
+    tipoMensagem?: 'reordenar' | 'prospeccao' | 'frete_terceiro' | 'geral',
+    detalhesPedido?: { data_compra?: string; produto?: string; quantidade?: string; endereco_fazenda?: string },
+    lembreteInfo?: { id: string; tipo: 'estoque' | 'prospect'; detalhe: string }
+  ) => {
+    let msg = '';
+    const dataCompraFormatada = detalhesPedido?.data_compra || 'recente';
+    const prod = detalhesPedido?.produto || 'Silagem de Milho';
+    const qtd = detalhesPedido?.quantidade || 'quantidade habitual';
+    const end = detalhesPedido?.endereco_fazenda || 'na fazenda do cliente';
+
+    if (tipoMensagem === 'reordenar') {
+      msg = `Olá cliente parceiro ${nome}, vi que a sua última compra foi em ${dataCompraFormatada}. Pode ser que precise mais de nossos produtos! Gostaria de repetir a compra do produto: ${prod} (${qtd})?`;
+    } else if (tipoMensagem === 'prospeccao') {
+      msg = `Olá ${nome}, tudo bem? Vi que conversamos recentemente sobre a ${prod}. Gostaria de tirar dúvidas ou fechar o seu pedido de silagem hoje?`;
+    } else if (tipoMensagem === 'frete_terceiro') {
+      msg = `Olá parceiro ${nome}! Temos um frete de entrega de ${qtd} de ${prod} para levar em: ${end}. Seu caminhão tem disponibilidade para realizar essa entrega?`;
+    } else {
+      msg = `Olá ${nome}, tudo bem? Entro em contato da Caboclo Silagem sobre o seu atendimento. Como podemos te ajudar hoje?`;
+    }
+
+    if (lembreteInfo) {
+      marcarComoRespondido(lembreteInfo.id, nome, lembreteInfo.tipo, lembreteInfo.detalhe);
+    }
+
+    setWhatsappModal({
+      isOpen: true,
+      telefone: telefone || '',
+      mensagem: msg,
+      nomeCliente: nome,
+    });
+  };
+
+  const enviarWhatsApp = () => {
+    const numLimpo = whatsappModal.telefone.replace(/\D/g, '');
+    const numFinal = numLimpo ? (numLimpo.startsWith('55') ? numLimpo : `55${numLimpo}`) : '';
+    const linkWA = numFinal
+      ? `https://wa.me/${numFinal}?text=${encodeURIComponent(whatsappModal.mensagem)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(whatsappModal.mensagem)}`;
+
+    window.open(linkWA, '_blank');
+    setWhatsappModal((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  const terceirosTransportadores = contatos.filter((c) => c.tipo === 'terceiro');
+
+  const limiteSeteDias = new Date();
+  limiteSeteDias.setDate(limiteSeteDias.getDate() + 7);
+  const limiteSeteDiasStr = limiteSeteDias.toISOString().split('T')[0];
+
+  const lembretesEstoqueSemana = pedidos.filter(
+    (p) => p.data_previsao_fim_estoque && p.data_previsao_fim_estoque <= limiteSeteDiasStr && isLembreteAtivo(p.id)
+  );
+  const lembretesProspectsSemana = contatos.filter(
+    (c) => c.status_crm === 'possibilidade' && isLembreteAtivo(c.id)
+  );
+
+  const contatosFiltrados = contatos.filter((c) => {
+    if (filtroContato === 'todos') return true;
+    if (filtroContato === 'possibilidade') return c.status_crm === 'possibilidade';
+    return c.tipo === filtroContato;
+  });
+
+  const totalVendas = pedidos
+    .filter((p) => p.tipo_operacao === 'venda')
+    .reduce((acc, curr) => acc + (curr.valor_total || 0), 0);
+
+  const totalCompras = pedidos
+    .filter((p) => p.tipo_operacao === 'compra')
+    .reduce((acc, curr) => acc + (curr.valor_total || 0), 0);
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col pb-24">
+      {/* Banner Off-line quando sem sinal de internet */}
+      {!isOnline && (
+        <div className="bg-amber-950/90 text-amber-200 border-b border-amber-800/80 px-3 py-1.5 text-center text-xs font-semibold flex items-center justify-center gap-1.5 sticky top-0 z-40">
+          <WifiOff className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+          <span>Modo Off-line — Dados e rascunhos guardados no aparelho. Sincroniza ao reconectar!</span>
+        </div>
+      )}
+
+      {/* Header com Botões de Ação */}
+      <header className="w-full bg-slate-900 border-b border-slate-800 px-4 py-3 sticky top-0 z-30 shadow-md">
+        <div className="max-w-md mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="bg-white p-1 rounded-xl shadow shrink-0 overflow-hidden w-9 h-9 flex items-center justify-center border border-slate-700">
+              <img src="/logo.png" alt="Logo Caboclo" className="w-full h-full object-contain rounded-lg" />
+            </div>
+            <div>
+              <h1 className="text-sm font-bold text-white leading-tight flex items-center gap-1.5">
+                Caboclo Agro CRM
+                {isOnline ? (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-1.5 py-0.2 rounded font-normal" title="Conectado à internet">
+                    <Wifi className="w-2.5 h-2.5" /> On
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] bg-amber-950 text-amber-400 border border-amber-800 px-1.5 py-0.2 rounded font-normal" title="Modo sem internet">
+                    <WifiOff className="w-2.5 h-2.5" /> Off
+                  </span>
+                )}
+              </h1>
+              <span className="text-[10px] text-emerald-400 font-medium">Gestão e Otimização Inteligente</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {/* BOTÃO RASCUNHOS COM BADGE DE CONTAGEM */}
+            <button
+              onClick={() => setIsRascunhosModalOpen(true)}
+              className="relative bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all"
+              title="Ver rascunhos salvos"
+            >
+              <Inbox className="w-3.5 h-3.5" /> Rascunhos
+              {rascunhos.length > 0 && (
+                <span className="bg-amber-400 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ml-0.5">
+                  {rascunhos.length}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => abrirCadastroManual('cliente')}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all active:scale-95"
+            >
+              <UserPlus className="w-3.5 h-3.5" /> + Cadastro
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Conteúdo Principal conforme Aba Ativa */}
+      <main className="flex-1 max-w-md w-full mx-auto px-4 pt-4 flex flex-col gap-5">
+        {/* PAINEL DE LEMBRETES DA SEMANA (Apenas na tela inicial ao acessar o app) */}
+        {activeTab === 'voz' && (lembretesEstoqueSemana.length > 0 || lembretesProspectsSemana.length > 0 || lembretesRespondidos.length > 0) && (
+          <div className="bg-gradient-to-r from-amber-950/60 to-slate-900 border border-amber-500/40 rounded-2xl p-4 space-y-3 shadow-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+                <BellRing className="w-4 h-4 text-amber-400 animate-bounce" />
+                <span>Lembretes da Semana</span>
+              </div>
+              
+              {/* Abas do painel: pendentes vs respondidos */}
+              <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <button
+                  onClick={() => setAbaLembretes('pendentes')}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                    abaLembretes === 'pendentes'
+                      ? 'bg-amber-500 text-slate-950 shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Pendentes ({lembretesEstoqueSemana.length + lembretesProspectsSemana.length})
+                </button>
+                <button
+                  onClick={() => setAbaLembretes('respondidos')}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                    abaLembretes === 'respondidos'
+                      ? 'bg-emerald-500 text-slate-950 shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Respondidos ({lembretesRespondidos.length})
+                </button>
+              </div>
+            </div>
+
+            {abaLembretes === 'pendentes' ? (
+              <div className="space-y-2">
+                {lembretesEstoqueSemana.length === 0 && lembretesProspectsSemana.length === 0 && (
+                  <div className="text-center py-4 text-slate-400 text-xs italic">
+                    🎉 Nenhum lembrete pendente para esta semana!
+                  </div>
+                )}
+
+                {lembretesEstoqueSemana.map((p) => {
+                  const c = contatos.find((cnt) => cnt.nome === p.nome_cliente);
+                  return (
+                    <div
+                      key={p.id}
+                      className="bg-slate-950/80 border border-amber-800/60 rounded-xl p-3 space-y-2"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs text-white">{p.nome_cliente}</span>
+                            <span className="text-[9px] bg-red-950 text-red-300 px-1.5 py-0.5 rounded uppercase font-bold">
+                              Estoque Fim
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-amber-300 block font-medium">
+                            Previsão: {p.data_previsao_fim_estoque}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {p.produto} ({p.quantidade})
+                          </span>
+                        </div>
+
+                        <button
+                          onClick={() => excluirLembrete(p.id)}
+                          className="text-slate-500 hover:text-red-400 p-1 transition-colors"
+                          title="Excluir lembrete"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-900">
+                        <button
+                          onClick={() => setAdiarModal({ id: p.id || '', nome: p.nome_cliente })}
+                          className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                          title="Adiar por alguns dias"
+                        >
+                          <Clock className="w-3 h-3 text-amber-400" /> Adiar
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            abrirWhatsAppComMensagem(
+                              p.nome_cliente,
+                              c?.telefone,
+                              'reordenar',
+                              {
+                                data_compra: p.data_compra,
+                                produto: p.produto || 'Silagem',
+                                quantidade: p.quantidade || '10t',
+                              },
+                              {
+                                id: p.id || '',
+                                tipo: 'estoque',
+                                detalhe: `${p.produto || 'Silagem'} (${p.quantidade || '10t'})`,
+                              }
+                            )
+                          }
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 shadow transition-colors"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" /> Whats
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {lembretesProspectsSemana.map((c) => (
+                  <div
+                    key={c.id}
+                    className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-xs text-white">{c.nome}</span>
+                          <span className="text-[9px] bg-amber-950 text-amber-400 px-1.5 py-0.5 rounded uppercase font-bold">
+                            Prospect
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 block italic">
+                          &quot;{c.observacao || 'Aguardando retorno sobre orçamento'}&quot;
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={() => excluirLembrete(c.id)}
+                        className="text-slate-500 hover:text-red-400 p-1 transition-colors"
+                        title="Excluir lembrete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-900">
+                      <button
+                        onClick={() => setAdiarModal({ id: c.id || '', nome: c.nome })}
+                        className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                        title="Adiar por alguns dias"
+                      >
+                        <Clock className="w-3 h-3 text-amber-400" /> Adiar
+                      </button>
+
+                      <button
+                        onClick={() =>
+                          abrirWhatsAppComMensagem(
+                            c.nome,
+                            c.telefone,
+                            'prospeccao',
+                            undefined,
+                            {
+                              id: c.id || '',
+                              tipo: 'prospect',
+                              detalhe: c.observacao || 'Orçamento pendente',
+                            }
+                          )
+                        }
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 shadow transition-colors"
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" /> Whats
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {lembretesRespondidos.length === 0 ? (
+                  <div className="text-center py-4 text-slate-400 text-xs italic">
+                    Nenhum lembrete respondido nesta semana ainda.
+                  </div>
+                ) : (
+                  lembretesRespondidos.map((resp) => (
+                    <div
+                      key={resp.id}
+                      className="bg-slate-950/80 border border-emerald-800/40 rounded-xl p-3 flex items-center justify-between gap-2"
+                    >
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-xs text-white">{resp.nome}</span>
+                          <span className="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.2 rounded font-bold uppercase flex items-center gap-0.5">
+                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" /> Respondido
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                          Contatado em {resp.data_resposta}
+                        </span>
+                        {resp.detalhe && (
+                          <span className="text-[10px] text-slate-500 italic block">{resp.detalhe}</span>
+                        )}
+                      </div>
+
+                      <button
+                        onClick={() => restaurarLembreteRespondido(resp.id)}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0"
+                        title="Restaurar para pendentes"
+                      >
+                        <RotateCcw className="w-3 h-3 text-amber-400" /> Restaurar
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ABA 1: TELA DE VOZ & CLIMA */}
+        {activeTab === 'voz' && (
+          <div className="flex flex-col gap-4">
+            {/* 🔴 BARRA DE GRAVAÇÃO COMPACTA (Texto à esquerda, Botão à direita) */}
+            <div className="w-full bg-slate-900 border border-emerald-500/40 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-lg">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border transition-all ${
+                      status === '🎙️ Ouvindo...'
+                        ? 'bg-red-950/80 border-red-500 text-red-300 animate-pulse'
+                        : status === 'Processando com IA...'
+                        ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+                        : status === '📝 Salvo em Rascunhos'
+                        ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+                        : status === '✅ Salvo com sucesso!'
+                        ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+                        : 'bg-slate-950 border-slate-800 text-slate-300'
+                    }`}
+                  >
+                    {status}
+                  </span>
+                </div>
+                <span className="text-[10px] text-slate-400">
+                  Dite pedidos, clientes ou fretes • Salva off-line
+                </span>
+              </div>
+
+              {/* Botão de Gravação à Direita */}
+              <button
+                onClick={isRecording ? stopRecordingAndProcess : startRecording}
+                disabled={status === 'Processando com IA...'}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-lg transition-transform active:scale-95 border cursor-pointer shrink-0 select-none ${
+                  isRecording
+                    ? 'bg-gradient-to-r from-red-600 to-rose-700 border-red-400 text-white animate-pulse'
+                    : 'bg-gradient-to-r from-emerald-600 to-green-600 border-emerald-400 text-white hover:brightness-110'
+                }`}
+              >
+                {isRecording ? (
+                  <>
+                    <Square className="w-4 h-4 fill-white" />
+                    <span>Parar</span>
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-4 h-4" />
+                    <span>Gravar Voz</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* 🔵 WIDGET DE CLIMA & TEMPO AGRÍCOLA */}
+            <div className="w-full bg-gradient-to-br from-sky-950/70 via-slate-900 to-slate-950 border border-sky-500/30 rounded-2xl p-4 shadow-xl space-y-3">
+              <div className="flex items-center justify-between border-b border-sky-900/40 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="bg-sky-500/20 p-2 rounded-xl text-sky-400">
+                    <Sun className="w-5 h-5 text-amber-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-white flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-sky-400" /> {clima.cidade}
+                    </h3>
+                    <span className="text-[10px] text-sky-300 font-medium">{clima.condicao} • Clima Agro</span>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className="text-2xl font-extrabold text-white leading-none block">{clima.temp}°C</span>
+                  <span className="text-[9px] text-emerald-400 font-bold uppercase">
+                    {clima.chuvaProb <= 20 ? '☀️ Bom p/ Silagem' : '🌧️ Possibilidade de Chuva'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Métricas do Tempo */}
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="bg-slate-950/80 border border-slate-800 p-2 rounded-xl">
+                  <span className="text-[10px] text-slate-400 flex items-center justify-center gap-1">
+                    <Droplets className="w-3 h-3 text-sky-400" /> Umidade
+                  </span>
+                  <span className="font-bold text-sky-200 block text-xs mt-0.5">{clima.umidade}%</span>
+                </div>
+
+                <div className="bg-slate-950/80 border border-slate-800 p-2 rounded-xl">
+                  <span className="text-[10px] text-slate-400 flex items-center justify-center gap-1">
+                    <CloudRain className="w-3 h-3 text-blue-400" /> Prob. Chuva
+                  </span>
+                  <span className="font-bold text-blue-200 block text-xs mt-0.5">{clima.chuvaProb}%</span>
+                </div>
+
+                <div className="bg-slate-950/80 border border-slate-800 p-2 rounded-xl">
+                  <span className="text-[10px] text-slate-400 flex items-center justify-center gap-1">
+                    <Wind className="w-3 h-3 text-slate-400" /> Vento
+                  </span>
+                  <span className="font-bold text-slate-200 block text-xs mt-0.5">{clima.vento}</span>
+                </div>
+              </div>
+
+              {/* Previsão Próximos Dias */}
+              <div className="flex items-center justify-between gap-1.5 pt-1">
+                {clima.previsaoDias.map((d, idx) => (
+                  <div key={idx} className="flex-1 bg-slate-950/50 border border-slate-800/80 p-1.5 rounded-xl text-center text-[10px]">
+                    <span className="text-slate-400 font-semibold block">{d.dia}</span>
+                    <span className="text-base my-0.5 block">{d.icone}</span>
+                    <span className="font-bold text-slate-200">{d.tempMax}°C</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {errorMessage && (
+              <div className="w-full bg-slate-900 border border-amber-600/60 rounded-xl p-3 flex items-start gap-2 text-amber-200 text-xs">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{errorMessage}</span>
+              </div>
+            )}
+
+            {/* BOX DE TRANSCRIÇÃO + BOTÃO "SALVAR EM RASCUNHOS" */}
+            {transcript && (
+              <div className="w-full bg-slate-900 border border-slate-800 rounded-xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase text-slate-400 block">
+                    Transcrição da Voz
+                  </span>
+                  <button
+                    onClick={() => salvarRascunho(transcript)}
+                    className="bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-700/60 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                  >
+                    <Save className="w-3.5 h-3.5" /> Salvar Rascunho
+                  </button>
+                </div>
+
+                <p className="text-xs text-slate-200 italic bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                  &quot;{transcript}&quot;
+                </p>
+              </div>
+            )}
+
+            {/* FORMULÁRIO DE CONFIRMAÇÃO DE VOZ */}
+            {formData && !isManualModalOpen && (
+              <div className="w-full bg-slate-900 border border-emerald-500/40 rounded-2xl p-4 shadow-xl space-y-3 animate-fadeIn">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                    <Edit3 className="w-4 h-4" />
+                    <span>Conferir Dados Extraídos</span>
+                  </div>
+                  <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded font-mono">
+                    IA Extracted
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">Tipo</label>
+                    <select
+                      value={formData.tipo}
+                      onChange={(e) => setFormData({ ...formData, tipo: e.target.value as TipoEntidade })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                    >
+                      <option value="cliente">👤 Cliente</option>
+                      <option value="terceiro">🚚 Terceiro / Transportador</option>
+                      <option value="funcionario">👨‍🌾 Funcionário</option>
+                      <option value="fornecedor">🏢 Fornecedor</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">Classificação</label>
+                    <select
+                      value={formData.status_crm}
+                      onChange={(e) => setFormData({ ...formData, status_crm: e.target.value as StatusCRM })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                    >
+                      <option value="possibilidade">❓ Possibilidade</option>
+                      <option value="cliente_ativo">✅ Ativo</option>
+                      <option value="parceiro">⭐ Parceiro</option>
+                    </select>
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="text-[10px] text-slate-400 block mb-0.5">Nome / Fazenda / Motorista</label>
+                    <input
+                      type="text"
+                      value={formData.nome}
+                      onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                    />
+                  </div>
+
+                  {formData.tipo === 'cliente' && (
+                    <>
+                      <div className="col-span-2">
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Endereço da Fazenda</label>
+                        <input
+                          type="text"
+                          value={formData.endereco_fazenda}
+                          onChange={(e) => setFormData({ ...formData, endereco_fazenda: e.target.value })}
+                          placeholder="Ex: BR-101 Km 45, Linhares"
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Nº de Animais</label>
+                        <input
+                          type="text"
+                          value={formData.quantidade_animais}
+                          onChange={(e) => setFormData({ ...formData, quantidade_animais: e.target.value })}
+                          placeholder="Ex: 120 cabeças"
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  {formData.tipo === 'terceiro' && (
+                    <>
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Carga Máx. (Toneladas)</label>
+                        <input
+                          type="number"
+                          value={formData.capacidade_carga_toneladas}
+                          onChange={(e) => setFormData({ ...formData, capacidade_carga_toneladas: e.target.value })}
+                          placeholder="Ex: 14"
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[10px] text-slate-400 block mb-0.5">Tipo do Caminhão</label>
+                        <input
+                          type="text"
+                          value={formData.tipo_veiculo}
+                          onChange={(e) => setFormData({ ...formData, tipo_veiculo: e.target.value })}
+                          placeholder="Ex: Truck 3 Eixos"
+                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">Telefone</label>
+                    <input
+                      type="text"
+                      value={formData.telefone}
+                      onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-0.5">Produto / Pedido</label>
+                    <input
+                      type="text"
+                      value={formData.produto}
+                      onChange={(e) => setFormData({ ...formData, produto: e.target.value })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => setFormData(null)}
+                    className="flex-1 bg-slate-800 text-slate-300 py-2 rounded-lg font-semibold text-xs"
+                  >
+                    Descartar
+                  </button>
+                  <button
+                    onClick={salvarCadastroConfirmado}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1"
+                  >
+                    <Check className="w-4 h-4" /> Salvar Cadastro
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ABA 2: CONTATOS */}
+        {activeTab === 'contatos' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+              {[
+                { id: 'todos', label: 'Todos' },
+                { id: 'cliente', label: '👥 Clientes' },
+                { id: 'possibilidade', label: '❓ Possibilidades' },
+                { id: 'terceiro', label: '🚚 Terceiros' },
+                { id: 'fornecedor', label: '🏢 Fornecedores' },
+                { id: 'funcionario', label: '👨‍🌾 Funcionários' },
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setFiltroContato(item.id)}
+                  className={`px-3 py-1.5 rounded-full whitespace-nowrap font-medium border ${
+                    filtroContato === item.id
+                      ? 'bg-emerald-500 text-slate-950 font-bold border-emerald-400'
+                      : 'bg-slate-900 text-slate-300 border-slate-800'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-2.5">
+              {contatosFiltrados.map((contato) => {
+                const cId = contato.id || '';
+                const isExpanded = !!contatosExpandidos[cId];
+                const temDetalhes = !!(
+                  contato.endereco_fazenda ||
+                  contato.quantidade_animais ||
+                  contato.observacao ||
+                  contato.capacidade_carga_toneladas ||
+                  contato.tipo_veiculo
+                );
+
+                return (
+                  <div
+                    key={cId}
+                    className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2 hover:border-slate-700 transition-all shadow-sm"
+                  >
+                    {/* PARTE SUPERIOR CABEÇALHO (Circulada na imagem do usuário) */}
+                    <div
+                      className="flex items-start justify-between gap-2 cursor-pointer select-none"
+                      onClick={() => temDetalhes && toggleExpandContato(cId)}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-sm text-white">{contato.nome}</span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              contato.tipo === 'terceiro'
+                                ? 'bg-amber-950 text-amber-400 border border-amber-800'
+                                : contato.status_crm === 'possibilidade'
+                                ? 'bg-blue-950 text-blue-400 border border-blue-800'
+                                : 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                            }`}
+                          >
+                            {contato.tipo === 'terceiro' ? 'Terceiro / Freteiro' : contato.tipo}
+                          </span>
+                        </div>
+                        {contato.telefone && (
+                          <span className="text-xs text-slate-400 flex items-center gap-1 mt-0.5 font-mono">
+                            <Phone className="w-3 h-3 text-slate-500" /> {contato.telefone}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => abrirEdicaoContato(contato)}
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                          title="Editar cadastro"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-amber-400" /> Editar
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            abrirWhatsAppComMensagem(
+                              contato.nome,
+                              contato.telefone,
+                              contato.status_crm === 'possibilidade' ? 'prospeccao' : 'geral'
+                            )
+                          }
+                          className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5 text-emerald-400" /> Whats
+                        </button>
+
+                        {temDetalhes && (
+                          <button
+                            onClick={() => toggleExpandContato(cId)}
+                            className="p-1 text-slate-400 hover:text-white transition-colors ml-0.5"
+                            title={isExpanded ? 'Ocultar detalhes' : 'Ver mais detalhes'}
+                          >
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4 text-emerald-400" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-slate-400" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* DETALHES EXPANDIDOS (Aparece somente quando clicado) */}
+                    {isExpanded && temDetalhes && (
+                      <div className="pt-2 border-t border-slate-800/80 space-y-2 animate-fadeIn">
+                        {contato.tipo === 'cliente' && (
+                          <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-950/60 p-2.5 rounded-xl text-slate-300 border border-slate-850">
+                            {contato.endereco_fazenda && (
+                              <div className="col-span-2 flex items-center gap-1.5 text-emerald-300 font-medium">
+                                <MapPin className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                                <span>{contato.endereco_fazenda}</span>
+                              </div>
+                            )}
+                            {contato.quantidade_animais && (
+                              <div className="flex items-center gap-1.5 text-slate-300">
+                                <Home className="w-3.5 h-3.5 text-slate-400" />
+                                <span>{contato.quantidade_animais}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {contato.tipo === 'terceiro' && (
+                          <div className="flex items-center justify-between text-[11px] bg-amber-950/40 border border-amber-800/40 p-2.5 rounded-xl text-amber-200">
+                            <span className="font-semibold flex items-center gap-1">
+                              <Truck className="w-3.5 h-3.5 text-amber-400" /> {contato.tipo_veiculo || 'Caminhão de Carga'}
+                            </span>
+                            <span className="bg-amber-900/60 px-2 py-0.5 rounded font-mono font-bold text-amber-300">
+                              Capacidade: {contato.capacidade_carga_toneladas || 10}t
+                            </span>
+                          </div>
+                        )}
+
+                        {contato.observacao && (
+                          <p className="text-xs text-slate-300 bg-slate-950/60 p-2.5 rounded-xl italic border border-slate-850">
+                            &quot;{contato.observacao}&quot;
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ABA 3: TERCEIROS */}
+        {activeTab === 'terceiros' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <div>
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Terceiros & Freteiros Alocáveis
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  Selecione o caminhão ideal pela capacidade de carga para evitar viagens perdidas.
+                </p>
+              </div>
+              <button
+                onClick={() => abrirCadastroManual('terceiro')}
+                className="bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" /> Adicionar
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {terceirosTransportadores.map((terceiro) => (
+                <div
+                  key={terceiro.id}
+                  className="bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-4 space-y-3 shadow-md"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Truck className="w-4 h-4 text-amber-400" />
+                        <span className="font-bold text-sm text-white">{terceiro.nome}</span>
+                      </div>
+                      <span className="text-xs text-slate-400 block mt-0.5">
+                        {terceiro.tipo_veiculo || 'Caminhão de Frete'} • {terceiro.cidade || 'Região'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => abrirEdicaoContato(terceiro)}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
+                        title="Editar freteiro"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                      </button>
+                      <span className="bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded text-xs font-extrabold font-mono">
+                        {terceiro.capacidade_carga_toneladas || 10} Ton
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px]">Simulação p/ 10t de silagem:</span>
+                    <span className="font-bold text-emerald-400">
+                      {(terceiro.capacidade_carga_toneladas || 10) >= 10
+                        ? '1 viagem (Capacidade suficiente)'
+                        : `${Math.ceil(10 / (terceiro.capacidade_carga_toneladas || 5))} viagens necessárias`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs text-slate-400">📱 {terceiro.telefone || 'Sem telefone'}</span>
+                    <button
+                      onClick={() =>
+                        abrirWhatsAppComMensagem(
+                          terceiro.nome,
+                          terceiro.telefone,
+                          'frete_terceiro',
+                          {
+                            produto: 'Silagem de Milho',
+                            quantidade: '10 toneladas',
+                            endereco_fazenda: 'Fazenda Bela Vista (Vila Velha)',
+                          }
+                        )
+                      }
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow"
+                    >
+                      <Send className="w-3.5 h-3.5" /> Cotar Frete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ABA 4: PEDIDOS & GERENCIAMENTO DE ESTOQUE */}
+        {activeTab === 'pedidos' && (
+          <div className="space-y-4">
+            {/* Header & Sub-abas (Pedidos vs Gerenciar Estoque) */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                <button
+                  onClick={() => setSubAbaPedidos('pedidos')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    subAbaPedidos === 'pedidos'
+                      ? 'bg-emerald-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  🛒 Pedidos ({pedidos.length})
+                </button>
+                <button
+                  onClick={() => setSubAbaPedidos('estoque')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    subAbaPedidos === 'estoque'
+                      ? 'bg-sky-600 text-white shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  📦 Estoque ({estoque.length})
+                </button>
+              </div>
+
+              {subAbaPedidos === 'pedidos' ? (
+                <button
+                  onClick={() => {
+                    setEditingPedidoId(null);
+                    setNovoPedidoForm({
+                      clienteId: '',
+                      terceiroId: '',
+                      itens: [{ estoqueId: estoque[0]?.id || 'est-1', quantidade: '10' }],
+                      dataCompra: hojeStr,
+                      diasEstoqueFim: '30',
+                      statusFinanceiro: 'pendente',
+                      observacao: '',
+                    });
+                    setIsNovoPedidoModalOpen(true);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Novo Pedido
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    setEditingEstoqueId(null);
+                    setNovoItemEstoqueForm({
+                      nome: '',
+                      quantidade: '',
+                      unidade: 'toneladas',
+                      preco: '',
+                      alerta: '10',
+                      observacao: '',
+                    });
+                    setIsNovoItemEstoqueModalOpen(true);
+                  }}
+                  className="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all shrink-0"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Entrada Estoque
+                </button>
+              )}
+            </div>
+
+            {/* VISUALIZAÇÃO DE PEDIDOS */}
+            {subAbaPedidos === 'pedidos' && (
+              <div className="space-y-3">
+                {pedidos.map((pedido) => {
+                  const clienteObj = contatos.find((c) => c.nome === pedido.nome_cliente || c.id === pedido.contato_id);
+                  const qtdTon = pedido.quantidade_toneladas_num || 10;
+
+                  return (
+                    <div key={pedido.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white text-sm">{pedido.nome_cliente}</span>
+                          <button
+                            onClick={() => abrirEdicaoPedido(pedido)}
+                            className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
+                            title="Editar pedido"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => pedido.id && excluirPedido(pedido.id)}
+                            className="p-1 rounded bg-slate-800 hover:bg-red-950 text-red-400 transition-colors"
+                            title="Excluir pedido"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <span className="text-[11px] text-slate-400 font-mono">Data: {pedido.data_compra}</span>
+                      </div>
+
+                      <div className="space-y-1.5 bg-slate-950 p-3 rounded-xl border border-slate-850">
+                        <div className="flex items-center justify-between text-xs text-slate-200">
+                          <span className="font-semibold text-emerald-400">🌾 {pedido.produto}</span>
+                          <span className="font-bold text-emerald-300 text-sm">
+                            {pedido.valor_total ? `R$ ${pedido.valor_total.toFixed(2)}` : 'R$ -'}
+                          </span>
+                        </div>
+
+                        {pedido.quantidade && (
+                          <span className="text-[11px] text-slate-400 block">Qtd: {pedido.quantidade}</span>
+                        )}
+                      </div>
+
+                      {clienteObj?.endereco_fazenda && (
+                        <div className="text-[11px] text-emerald-300 flex items-center gap-1">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span>{clienteObj.endereco_fazenda}</span>
+                        </div>
+                      )}
+
+                      <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2">
+                        <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1">
+                          <Truck className="w-3.5 h-3.5" /> Terceiros Disponíveis p/ Carga de {qtdTon}t:
+                        </span>
+
+                        <div className="space-y-1.5">
+                          {terceirosTransportadores.map((t) => {
+                            const cap = t.capacidade_carga_toneladas || 10;
+                            const viagens = cap >= qtdTon ? 1 : Math.ceil(qtdTon / cap);
+                            const podeLevarDireto = cap >= qtdTon;
+
+                            return (
+                              <div
+                                key={t.id}
+                                className="flex items-center justify-between text-xs p-2 bg-slate-900 rounded-lg border border-slate-850"
+                              >
+                                <div>
+                                  <span className="font-bold text-white block">{t.nome}</span>
+                                  <span className="text-[10px] text-slate-400">
+                                    {t.tipo_veiculo} ({cap}t) •{' '}
+                                    <strong className={podeLevarDireto ? 'text-emerald-400' : 'text-amber-400'}>
+                                      {podeLevarDireto ? '1 viagem' : `${viagens} viagens`}
+                                    </strong>
+                                  </span>
+                                </div>
+
+                                <button
+                                  onClick={() =>
+                                    abrirWhatsAppComMensagem(
+                                      t.nome,
+                                      t.telefone,
+                                      'frete_terceiro',
+                                      {
+                                        produto: pedido.produto || 'Silagem',
+                                        quantidade: pedido.quantidade || '10t',
+                                        endereco_fazenda: clienteObj?.endereco_fazenda || pedido.nome_cliente,
+                                      }
+                                    )
+                                  }
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1"
+                                >
+                                  <Send className="w-3 h-3" /> Chamar
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* VISUALIZAÇÃO DO GERENCIAMENTO DE ESTOQUE */}
+            {subAbaPedidos === 'estoque' && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-slate-900 border border-sky-500/30 p-3 rounded-xl">
+                    <span className="text-[10px] text-slate-400 block uppercase font-semibold">Total de Produtos</span>
+                    <span className="text-base font-extrabold text-sky-400">{estoque.length} itens</span>
+                  </div>
+                  <div className="bg-slate-900 border border-emerald-500/30 p-3 rounded-xl">
+                    <span className="text-[10px] text-slate-400 block uppercase font-semibold">Valor Total Estoque</span>
+                    <span className="text-base font-extrabold text-emerald-400">
+                      R$ {estoque.reduce((acc, i) => acc + (i.quantidade_disponivel * i.preco_unitario), 0).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2.5">
+                  {estoque.map((item) => {
+                    const isBaixo = item.quantidade_disponivel <= item.alerta_minimo;
+                    const isEsgotado = item.quantidade_disponivel <= 0;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2 shadow-md hover:border-slate-700 transition-colors"
+                      >
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-sm text-white block">{item.nome}</span>
+                              <button
+                                onClick={() => abrirEdicaoEstoque(item)}
+                                className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
+                                title="Editar produto do estoque"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => excluirItemEstoque(item.id)}
+                                className="p-1 rounded bg-slate-800 hover:bg-red-950 text-red-400 transition-colors"
+                                title="Excluir produto do estoque"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <span className="text-xs text-slate-400 font-mono">
+                              Preço Unitário: R$ {item.preco_unitario.toFixed(2)} / {item.unidade_medida}
+                            </span>
+                          </div>
+
+                          <span
+                            className={`px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
+                              isEsgotado
+                                ? 'bg-red-950 text-red-400 border-red-800'
+                                : isBaixo
+                                ? 'bg-amber-950 text-amber-400 border-amber-800 animate-pulse'
+                                : 'bg-emerald-950 text-emerald-400 border-emerald-800'
+                            }`}
+                          >
+                            {isEsgotado ? '❌ Esgotado' : isBaixo ? '⚠️ Estoque Baixo' : '✅ Disponível'}
+                          </span>
+                        </div>
+
+                        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 flex items-center justify-between text-xs">
+                          <span className="text-slate-400">Quantidade Atual:</span>
+                          <span className="font-extrabold text-white text-sm font-mono">
+                            {item.quantidade_disponivel} {item.unidade_medida}
+                          </span>
+                        </div>
+
+                        {item.observacao && (
+                          <p className="text-[11px] text-slate-400 italic bg-slate-950/40 p-2 rounded-lg">
+                            &quot;{item.observacao}&quot;
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ABA 5: FINANCEIRO */}
+        {activeTab === 'financeiro' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-slate-900 border border-emerald-500/30 p-3.5 rounded-2xl space-y-1">
+                <span className="text-[11px] text-slate-400 uppercase font-semibold block">Total Vendas</span>
+                <span className="text-lg font-extrabold text-emerald-400">
+                  R$ {totalVendas.toFixed(2)}
+                </span>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl space-y-1">
+                <span className="text-[11px] text-slate-400 uppercase font-semibold block">Compras / Fornecedor</span>
+                <span className="text-lg font-extrabold text-slate-200">
+                  R$ {totalCompras.toFixed(2)}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
+                Lançamentos Financeiros
+              </h2>
+              {pedidos.map((p) => (
+                <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-bold text-white block">{p.nome_cliente}</span>
+                    <span className="text-[11px] text-slate-400">
+                      {p.produto} • R$ {p.valor_total ? p.valor_total.toFixed(2) : '0.00'}
+                    </span>
+                  </div>
+                  <span className="px-2 py-1 rounded text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
+                    {p.status_financeiro === 'pago' ? 'PAGO' : 'PENDENTE'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* MODAL DE RASCUNHOS DE VOZ OFF-LINE */}
+      {isRascunhosModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                <Inbox className="w-5 h-5 text-amber-400" />
+                <span>Rascunhos de Voz ({rascunhos.length})</span>
+              </div>
+              <button onClick={() => setIsRascunhosModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {rascunhos.length === 0 ? (
+              <div className="text-center py-6 text-slate-500 text-xs">
+                Nenhum rascunho de voz salvo no momento.
+              </div>
+            ) : (
+              <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
+                {rascunhos.map((r) => (
+                  <div
+                    key={r.id}
+                    className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2"
+                  >
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span className="font-mono text-amber-400">Gravado às {r.created_at}</span>
+                      <button
+                        onClick={() => excluirRascunho(r.id)}
+                        className="text-red-400 hover:text-red-300 p-1"
+                        title="Excluir rascunho"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <p className="text-xs text-slate-200 italic leading-relaxed bg-slate-900 p-2 rounded-lg">
+                      &quot;{r.texto}&quot;
+                    </p>
+
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => processAudioText(r.texto)}
+                        className="flex-1 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-300 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Processar com IA
+                      </button>
+                      <button
+                        onClick={() => cadastrarAPartirDoRascunho(r)}
+                        className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1"
+                      >
+                        <FileEdit className="w-3.5 h-3.5 text-emerald-400" /> Cadastrar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={() => setIsRascunhosModalOpen(false)}
+              className="w-full bg-slate-800 text-slate-300 py-2 rounded-xl font-semibold text-xs"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CADASTRO / EDIÇÃO MANUAL DE REGISTROS */}
+      {isManualModalOpen && formData && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl my-8">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                {editingId ? <Edit3 className="w-5 h-5 text-amber-400" /> : <UserPlus className="w-5 h-5" />}
+                <span>
+                  {editingId ? 'Editar Cadastro Existente' : formData.tipo === 'terceiro' ? 'Novo Terceiro / Freteiro' : 'Novo Cadastro Manual'}
+                </span>
+              </div>
+              <button onClick={() => setIsManualModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 text-xs">
+              <div>
+                <label className="text-[11px] text-slate-400 font-semibold block mb-1">Tipo de Registro</label>
+                <select
+                  value={formData.tipo}
+                  onChange={(e) => setFormData({ ...formData, tipo: e.target.value as TipoEntidade })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                >
+                  <option value="cliente">👤 Cliente</option>
+                  <option value="terceiro">🚚 Terceiro / Freteiro</option>
+                  <option value="funcionario">👨‍🌾 Funcionário</option>
+                  <option value="fornecedor">🏢 Fornecedor</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] text-slate-400 font-semibold block mb-1">Classificação CRM</label>
+                <select
+                  value={formData.status_crm}
+                  onChange={(e) => setFormData({ ...formData, status_crm: e.target.value as StatusCRM })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                >
+                  <option value="possibilidade">❓ Possibilidade (Prospect)</option>
+                  <option value="cliente_ativo">✅ Ativo / Disponível</option>
+                  <option value="parceiro">⭐ Parceiro</option>
+                </select>
+              </div>
+
+              <div className="col-span-2">
+                <label className="text-[11px] text-slate-400 font-semibold block mb-1">Nome / Fazenda / Motorista *</label>
+                <input
+                  type="text"
+                  value={formData.nome}
+                  onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                  placeholder="Ex: João Paulo ou Sebastião Fretes"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              {formData.tipo === 'cliente' && (
+                <>
+                  <div className="col-span-2">
+                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Endereço da Fazenda</label>
+                    <input
+                      type="text"
+                      value={formData.endereco_fazenda}
+                      onChange={(e) => setFormData({ ...formData, endereco_fazenda: e.target.value })}
+                      placeholder="Ex: BR-101 Km 45, Linhares - ES"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Qtd. de Animais</label>
+                    <input
+                      type="text"
+                      value={formData.quantidade_animais}
+                      onChange={(e) => setFormData({ ...formData, quantidade_animais: e.target.value })}
+                      placeholder="Ex: 120 cabeças de gado"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                    />
+                  </div>
+                </>
+              )}
+
+              {formData.tipo === 'terceiro' && (
+                <>
+                  <div>
+                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Capacidade (Toneladas) *</label>
+                    <input
+                      type="number"
+                      value={formData.capacidade_carga_toneladas}
+                      onChange={(e) => setFormData({ ...formData, capacidade_carga_toneladas: e.target.value })}
+                      placeholder="Ex: 14"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-amber-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Tipo de Veículo / Caminhão</label>
+                    <input
+                      type="text"
+                      value={formData.tipo_veiculo}
+                      onChange={(e) => setFormData({ ...formData, tipo_veiculo: e.target.value })}
+                      placeholder="Ex: Truck 3 Eixos, Carreta"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="text-[11px] text-slate-400 font-semibold block mb-1">Telefone / WhatsApp</label>
+                <input
+                  type="text"
+                  value={formData.telefone}
+                  onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
+                  placeholder="Ex: 27999887766"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                />
+              </div>
+
+              {formData.tipo !== 'terceiro' && (
+                <>
+                  <div>
+                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Valor Total (R$)</label>
+                    <input
+                      type="number"
+                      value={formData.valor_total}
+                      onChange={(e) => setFormData({ ...formData, valor_total: e.target.value })}
+                      placeholder="Ex: 4500.00"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Produto</label>
+                    <input
+                      type="text"
+                      value={formData.produto}
+                      onChange={(e) => setFormData({ ...formData, produto: e.target.value })}
+                      placeholder="Ex: Silagem de Milho"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Quantidade</label>
+                    <input
+                      type="text"
+                      value={formData.quantidade}
+                      onChange={(e) => setFormData({ ...formData, quantidade: e.target.value })}
+                      placeholder="Ex: 10 toneladas"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div className="col-span-2">
+                <label className="text-[11px] text-slate-400 font-semibold block mb-1">Observações</label>
+                <textarea
+                  rows={2}
+                  value={formData.observacao}
+                  onChange={(e) => setFormData({ ...formData, observacao: e.target.value })}
+                  placeholder="Notas adicionais..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              {editingId && (
+                <button
+                  onClick={() => excluirContato(editingId)}
+                  className="bg-red-950 hover:bg-red-900 border border-red-800 text-red-300 p-2.5 rounded-xl font-semibold text-xs flex items-center justify-center gap-1"
+                  title="Excluir este registro"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+              <button
+                onClick={() => setIsManualModalOpen(false)}
+                className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-semibold text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarCadastroConfirmado}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
+              >
+                <Check className="w-4 h-4" /> {editingId ? 'Salvar Edição' : 'Salvar Cadastro'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL WHATSAPP COM MENSAGEM PRÉ-PREENCHIDA */}
+      {whatsappModal.isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                <MessageCircle className="w-5 h-5" />
+                <span>Disparar WhatsApp</span>
+              </div>
+              <button onClick={() => setWhatsappModal((prev) => ({ ...prev, isOpen: false }))} className="text-slate-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-slate-400 font-semibold block mb-1">Telefone</label>
+                <input
+                  type="text"
+                  value={whatsappModal.telefone}
+                  onChange={(e) => setWhatsappModal({ ...whatsappModal, telefone: e.target.value })}
+                  placeholder="Ex: 27999887766"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-100 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-400 font-semibold block mb-1">Mensagem Formatada</label>
+                <textarea
+                  rows={4}
+                  value={whatsappModal.mensagem}
+                  onChange={(e) => setWhatsappModal({ ...whatsappModal, mensagem: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2.5 text-slate-100 outline-none resize-none leading-relaxed"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setWhatsappModal((prev) => ({ ...prev, isOpen: false }))}
+                className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-semibold text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={enviarWhatsApp}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
+              >
+                <Send className="w-4 h-4" /> Abrir WhatsApp
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ADIAR LEMBRETE */}
+      {adiarModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-amber-500/40 rounded-2xl max-w-xs w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-sm">
+                <Clock className="w-4 h-4 text-amber-400" />
+                <span>Adiar Lembrete</span>
+              </div>
+              <button onClick={() => setAdiarModal(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              Escolha por quanto tempo deseja adiar o lembrete de <strong className="text-white">{adiarModal.nome}</strong>:
+            </p>
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                onClick={() => adiarLembrete(adiarModal.id, 3)}
+                className="bg-slate-800 hover:bg-amber-950 hover:border-amber-500/40 border border-slate-700 text-slate-200 p-2.5 rounded-xl font-bold transition-all text-center"
+              >
+                + 3 Dias
+              </button>
+              <button
+                onClick={() => adiarLembrete(adiarModal.id, 7)}
+                className="bg-slate-800 hover:bg-amber-950 hover:border-amber-500/40 border border-slate-700 text-slate-200 p-2.5 rounded-xl font-bold transition-all text-center"
+              >
+                + 7 Dias
+              </button>
+              <button
+                onClick={() => adiarLembrete(adiarModal.id, 15)}
+                className="bg-slate-800 hover:bg-amber-950 hover:border-amber-500/40 border border-slate-700 text-slate-200 p-2.5 rounded-xl font-bold transition-all text-center"
+              >
+                + 15 Dias
+              </button>
+              <button
+                onClick={() => adiarLembrete(adiarModal.id, 30)}
+                className="bg-slate-800 hover:bg-amber-950 hover:border-amber-500/40 border border-slate-700 text-slate-200 p-2.5 rounded-xl font-bold transition-all text-center"
+              >
+                + 30 Dias
+              </button>
+            </div>
+
+            <div className="pt-2 border-t border-slate-800 flex gap-2">
+              <button
+                onClick={() => setAdiarModal(null)}
+                className="w-full bg-slate-800 text-slate-300 py-2 rounded-xl text-xs font-semibold"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NOVO PEDIDO COM SELEÇÃO DE CLIENTE E ITENS DA VENDA */}
+      {isNovoPedidoModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl my-8">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                <ShoppingBag className="w-5 h-5 text-emerald-400" />
+                <span>{editingPedidoId ? 'Editar Pedido de Venda' : 'Criar Novo Pedido de Venda'}</span>
+              </div>
+              <button onClick={() => setIsNovoPedidoModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              {/* Seleção do Cliente */}
+              <div>
+                <label className="text-[11px] text-slate-300 font-semibold block mb-1">1. Selecionar Cliente *</label>
+                <select
+                  value={novoPedidoForm.clienteId}
+                  onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, clienteId: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-slate-100 outline-none focus:border-emerald-500"
+                >
+                  <option value="">-- Selecione o Cliente Cadastrado --</option>
+                  {contatos
+                    .filter((c) => c.tipo === 'cliente' || c.status_crm === 'possibilidade')
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        👤 {c.nome} {c.telefone ? `(${c.telefone})` : ''}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* Itens do Pedido (Produtos do Estoque) */}
+              <div className="space-y-2 border-t border-slate-800 pt-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] text-slate-300 font-semibold block">2. Itens da Venda (Estoque)</label>
+                  <button
+                    onClick={adicionarLinhaItemPedido}
+                    className="text-emerald-400 hover:text-emerald-300 text-[10px] font-bold flex items-center gap-0.5"
+                  >
+                    <Plus className="w-3 h-3" /> Adicionar Outro Item
+                  </button>
+                </div>
+
+                {novoPedidoForm.itens.map((itemForm, idx) => {
+                  const prodSel = estoque.find((e) => e.id === itemForm.estoqueId);
+                  const subTotalLinha = (parseFloat(itemForm.quantidade) || 0) * (prodSel?.preco_unitario || 0);
+
+                  return (
+                    <div key={idx} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={itemForm.estoqueId}
+                          onChange={(e) => {
+                            const nov = [...novoPedidoForm.itens];
+                            nov[idx].estoqueId = e.target.value;
+                            setNovoPedidoForm({ ...novoPedidoForm, itens: nov });
+                          }}
+                          className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100 text-xs outline-none"
+                        >
+                          {estoque.map((est) => (
+                            <option key={est.id} value={est.id}>
+                              {est.nome} (R$ {est.preco_unitario.toFixed(2)}/{est.unidade_medida})
+                            </option>
+                          ))}
+                        </select>
+
+                        {novoPedidoForm.itens.length > 1 && (
+                          <button
+                            onClick={() => removerLinhaItemPedido(idx)}
+                            className="text-red-400 hover:text-red-300 p-1"
+                            title="Remover item"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-1">
+                          <label className="text-[10px] text-slate-400">Qtd:</label>
+                          <input
+                            type="number"
+                            value={itemForm.quantidade}
+                            onChange={(e) => {
+                              const nov = [...novoPedidoForm.itens];
+                              nov[idx].quantidade = e.target.value;
+                              setNovoPedidoForm({ ...novoPedidoForm, itens: nov });
+                            }}
+                            className="w-20 bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-center text-white outline-none font-bold"
+                          />
+                          <span className="text-[10px] text-slate-400">{prodSel?.unidade_medida}</span>
+                        </div>
+
+                        <span className="text-emerald-400 font-bold font-mono text-xs">
+                          R$ {subTotalLinha.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Terceiro / Transportador */}
+              <div className="border-t border-slate-800 pt-2">
+                <label className="text-[11px] text-slate-300 font-semibold block mb-1">3. Freteiro / Transportador (Opcional)</label>
+                <select
+                  value={novoPedidoForm.terceiroId}
+                  onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, terceiroId: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-slate-100 outline-none"
+                >
+                  <option value="">-- Sem Freteiro / Retirada no Local --</option>
+                  {terceirosTransportadores.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      🚚 {t.nome} ({t.capacidade_carga_toneladas || 10}t - {t.tipo_veiculo})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Previsão Fim Estoque Cliente */}
+              <div>
+                <label className="text-[11px] text-slate-300 font-semibold block mb-1">4. Previsão de Duração na Fazenda</label>
+                <select
+                  value={novoPedidoForm.diasEstoqueFim}
+                  onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, diasEstoqueFim: e.target.value })}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-slate-100 outline-none"
+                >
+                  <option value="15">Estoque dura 15 dias</option>
+                  <option value="30">Estoque dura 30 dias (1 mês)</option>
+                  <option value="45">Estoque dura 45 dias</option>
+                  <option value="60">Estoque dura 60 dias (2 meses)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={() => setIsNovoPedidoModalOpen(false)}
+                className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-semibold text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarNovoPedido}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
+              >
+                <Check className="w-4 h-4" /> {editingPedidoId ? 'Salvar Edição' : 'Concluir Pedido'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NOVO ITEM NO ESTOQUE */}
+      {isNovoItemEstoqueModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-sky-500/40 rounded-2xl max-w-xs w-full p-5 space-y-3.5 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-sky-400 font-bold text-sm">
+                <Package className="w-5 h-5 text-sky-400" />
+                <span>{editingEstoqueId ? 'Editar Produto do Estoque' : 'Cadastrar Produto no Estoque'}</span>
+              </div>
+              <button onClick={() => setIsNovoItemEstoqueModalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              <div>
+                <label className="text-[11px] text-slate-300 font-semibold block mb-1">Nome do Produto *</label>
+                <input
+                  type="text"
+                  value={novoItemEstoqueForm.nome}
+                  onChange={(e) => setNovoItemEstoqueForm({ ...novoItemEstoqueForm, nome: e.target.value })}
+                  placeholder="Ex: Silagem de Milho"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-sky-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">Qtd. Inicial</label>
+                  <input
+                    type="number"
+                    value={novoItemEstoqueForm.quantidade}
+                    onChange={(e) => setNovoItemEstoqueForm({ ...novoItemEstoqueForm, quantidade: e.target.value })}
+                    placeholder="Ex: 100"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">Unidade</label>
+                  <select
+                    value={novoItemEstoqueForm.unidade}
+                    onChange={(e) => setNovoItemEstoqueForm({ ...novoItemEstoqueForm, unidade: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none"
+                  >
+                    <option value="toneladas">Toneladas (t)</option>
+                    <option value="sacos">Sacos</option>
+                    <option value="kg">Quilos (kg)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">Preço Unitário (R$)</label>
+                  <input
+                    type="number"
+                    value={novoItemEstoqueForm.preco}
+                    onChange={(e) => setNovoItemEstoqueForm({ ...novoItemEstoqueForm, preco: e.target.value })}
+                    placeholder="Ex: 450.00"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">Alerta Mínimo</label>
+                  <input
+                    type="number"
+                    value={novoItemEstoqueForm.alerta}
+                    onChange={(e) => setNovoItemEstoqueForm({ ...novoItemEstoqueForm, alerta: e.target.value })}
+                    placeholder="Ex: 20"
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-slate-800">
+              <button
+                onClick={() => setIsNovoItemEstoqueModalOpen(false)}
+                className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-semibold text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarNovoItemEstoque}
+                className="flex-1 bg-sky-600 hover:bg-sky-500 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
+              >
+                <Check className="w-4 h-4" /> {editingEstoqueId ? 'Salvar Edição' : 'Salvar Produto'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NAVBAR MOBILE FOOTER */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 py-2.5 px-4 z-40">
+        <div className="max-w-md mx-auto flex items-center justify-around">
+          <button
+            onClick={() => setActiveTab('voz')}
+            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
+              activeTab === 'voz' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Mic className="w-5 h-5" />
+            <span>Voz</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('contatos')}
+            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
+              activeTab === 'contatos' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Users className="w-5 h-5" />
+            <span>Contatos</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('terceiros')}
+            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
+              activeTab === 'terceiros' ? 'text-amber-400' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Truck className="w-5 h-5" />
+            <span>Terceiros</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('pedidos')}
+            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors relative ${
+              activeTab === 'pedidos' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <ShoppingBag className="w-5 h-5" />
+            <span>Pedidos</span>
+            {lembretesEstoqueSemana.length > 0 && (
+              <span className="absolute -top-1 right-2 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab('financeiro')}
+            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
+              activeTab === 'financeiro' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <DollarSign className="w-5 h-5" />
+            <span>Financeiro</span>
+          </button>
+        </div>
+      </nav>
+    </div>
+  );
+}
