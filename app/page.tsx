@@ -394,6 +394,16 @@ export default function CabocloAgroCRM() {
         try { setEstoque(JSON.parse(salvosEstoque)); } catch (e) {}
       }
 
+      const salvosContatos = localStorage.getItem('caboclo_contatos');
+      if (salvosContatos) {
+        try { setContatos(JSON.parse(salvosContatos)); } catch (e) {}
+      }
+
+      const salvosPedidos = localStorage.getItem('caboclo_pedidos');
+      if (salvosPedidos) {
+        try { setPedidos(JSON.parse(salvosPedidos)); } catch (e) {}
+      }
+
       const SpeechRecognition =
         (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
@@ -607,8 +617,16 @@ export default function CabocloAgroCRM() {
   const excluirContato = async (id: string) => {
     if (!confirm('Deseja realmente excluir este cadastro?')) return;
 
-    setContatos((prev) => prev.filter((c) => c.id !== id));
+    const novosContatos = contatos.filter((c) => c.id !== id);
+    setContatos(novosContatos);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_contatos', JSON.stringify(novosContatos));
+    }
+
     setIsManualModalOpen(false);
+    setEditingId(null);
+    setFormData(null);
 
     if (isSupabaseConfigured) {
       try {
@@ -689,7 +707,6 @@ export default function CabocloAgroCRM() {
 
       setStatus('Conferir & Confirmar');
     } catch (err: any) {
-      // SALVAMENTO AUTOMÁTICO EM RASCUNHO SE A IA OU INTERNET FALHAR!
       salvarRascunho(texto);
       setErrorMessage(
         'Serviço de IA instável no momento. Seu áudio foi SALVO NOS RASCUNHOS! Você pode conferir e cadastrar mais tarde.'
@@ -707,24 +724,34 @@ export default function CabocloAgroCRM() {
     const capNum = formData.capacidade_carga_toneladas ? parseFloat(formData.capacidade_carga_toneladas) : null;
 
     if (editingId) {
-      setContatos((prev) =>
-        prev.map((c) =>
-          c.id === editingId
-            ? {
-                ...c,
-                tipo: formData.tipo,
-                status_crm: formData.status_crm,
-                nome: formData.nome,
-                telefone: formData.telefone || null,
-                endereco_fazenda: formData.endereco_fazenda || null,
-                quantidade_animais: formData.quantidade_animais || null,
-                capacidade_carga_toneladas: capNum,
-                tipo_veiculo: formData.tipo_veiculo || null,
-                observacao: formData.observacao || null,
-              }
-            : c
-        )
+      const novosContatos = contatos.map((c) =>
+        c.id === editingId
+          ? {
+              ...c,
+              tipo: formData.tipo,
+              status_crm: formData.status_crm,
+              nome: formData.nome,
+              telefone: formData.telefone || null,
+              endereco_fazenda: formData.endereco_fazenda || null,
+              quantidade_animais: formData.quantidade_animais || null,
+              capacidade_carga_toneladas: capNum,
+              tipo_veiculo: formData.tipo_veiculo || null,
+              observacao: formData.observacao || null,
+            }
+          : c
       );
+
+      setContatos(novosContatos);
+
+      const novosPedidos = pedidos.map((p) =>
+        p.contato_id === editingId ? { ...p, nome_cliente: formData.nome } : p
+      );
+      setPedidos(novosPedidos);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_contatos', JSON.stringify(novosContatos));
+        localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
+      }
 
       if (isSupabaseConfigured) {
         try {
@@ -761,29 +788,39 @@ export default function CabocloAgroCRM() {
         created_at: new Date().toISOString(),
       };
 
-      let qtdTonNum = 1.0;
-      if (formData.quantidade) {
-        const match = formData.quantidade.match(/(\d+([.,]\d+)?)/);
-        if (match) qtdTonNum = parseFloat(match[1].replace(',', '.'));
+      const novosContatos = [novoContato, ...contatos];
+      setContatos(novosContatos);
+
+      let novosPedidos = pedidos;
+      if (formData.tipo !== 'terceiro' && (formData.produto || formData.quantidade)) {
+        let qtdTonNum = 1.0;
+        if (formData.quantidade) {
+          const match = formData.quantidade.match(/(\d+([.,]\d+)?)/);
+          if (match) qtdTonNum = parseFloat(match[1].replace(',', '.'));
+        }
+
+        const novoPedido: Pedido = {
+          id: `local-ped-${Date.now()}`,
+          contato_id: novoContato.id,
+          nome_cliente: formData.nome,
+          produto: formData.produto || 'Silagem',
+          quantidade: formData.quantidade || '1',
+          quantidade_toneladas_num: qtdTonNum,
+          valor_total: formData.valor_total ? parseFloat(formData.valor_total) : 0,
+          data_compra: hojeStr,
+          data_previsao_fim_estoque: formData.data_previsao_fim_estoque || null,
+          status_financeiro: 'pendente',
+          tipo_operacao: formData.tipo === 'fornecedor' ? 'compra' : 'venda',
+          observacao: formData.observacao || null,
+        };
+
+        novosPedidos = [novoPedido, ...pedidos];
+        setPedidos(novosPedidos);
       }
 
-      const novoPedido: Pedido = {
-        id: `local-ped-${Date.now()}`,
-        nome_cliente: formData.nome,
-        produto: formData.produto || 'Silagem',
-        quantidade: formData.quantidade || '1',
-        quantidade_toneladas_num: qtdTonNum,
-        valor_total: formData.valor_total ? parseFloat(formData.valor_total) : 0,
-        data_compra: hojeStr,
-        data_previsao_fim_estoque: formData.data_previsao_fim_estoque || null,
-        status_financeiro: 'pendente',
-        tipo_operacao: formData.tipo === 'fornecedor' ? 'compra' : 'venda',
-        observacao: formData.observacao || null,
-      };
-
-      setContatos((prev) => [novoContato, ...prev]);
-      if (formData.tipo !== 'terceiro' && (formData.produto || formData.quantidade)) {
-        setPedidos((prev) => [novoPedido, ...prev]);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_contatos', JSON.stringify(novosContatos));
+        localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
       }
 
       if (isSupabaseConfigured) {
