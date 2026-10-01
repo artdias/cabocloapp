@@ -461,14 +461,44 @@ export default function CabocloAgroCRM() {
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (dataContatos && dataContatos.length > 0) setContatos(dataContatos);
+      if (dataContatos && dataContatos.length > 0) {
+        const salvosLocal = typeof window !== 'undefined' ? localStorage.getItem('caboclo_contatos') : null;
+        if (salvosLocal) {
+          try {
+            const contatosLocais: Contato[] = JSON.parse(salvosLocal);
+            const mapaContatos = new Map<string, Contato>();
+            dataContatos.forEach((c) => { if (c.id) mapaContatos.set(c.id, c); });
+            contatosLocais.forEach((c) => { if (c.id) mapaContatos.set(c.id, c); else if (c.nome) mapaContatos.set(c.nome, c); });
+            setContatos(Array.from(mapaContatos.values()));
+          } catch (e) {
+            setContatos(dataContatos);
+          }
+        } else {
+          setContatos(dataContatos);
+        }
+      }
 
       const { data: dataPedidos } = await supabase
         .from('pedidos')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (dataPedidos && dataPedidos.length > 0) setPedidos(dataPedidos);
+      if (dataPedidos && dataPedidos.length > 0) {
+        const salvosLocalP = typeof window !== 'undefined' ? localStorage.getItem('caboclo_pedidos') : null;
+        if (salvosLocalP) {
+          try {
+            const pedidosLocais: Pedido[] = JSON.parse(salvosLocalP);
+            const mapaPedidos = new Map<string, Pedido>();
+            dataPedidos.forEach((p) => { if (p.id) mapaPedidos.set(p.id, p); });
+            pedidosLocais.forEach((p) => { if (p.id) mapaPedidos.set(p.id, p); });
+            setPedidos(Array.from(mapaPedidos.values()));
+          } catch (e) {
+            setPedidos(dataPedidos);
+          }
+        } else {
+          setPedidos(dataPedidos);
+        }
+      }
     } catch (err) {
       console.warn('Erro ao carregar dados:', err);
     } finally {
@@ -591,9 +621,10 @@ export default function CabocloAgroCRM() {
 
   // Abrir Modal de Edição de Cadastro Existente
   const abrirEdicaoContato = (contato: Contato) => {
-    const pedidoRelacionado = pedidos.find((p) => p.nome_cliente === contato.nome || p.contato_id === contato.id);
+    const pedidoRelacionado = pedidos.find((p) => p.nome_cliente === contato.nome || (contato.id && p.contato_id === contato.id));
 
-    setEditingId(contato.id || null);
+    const targetId = contato.id || contato.nome;
+    setEditingId(targetId);
     setFormData({
       tipo: contato.tipo,
       status_crm: contato.status_crm,
@@ -617,7 +648,7 @@ export default function CabocloAgroCRM() {
   const excluirContato = async (id: string) => {
     if (!confirm('Deseja realmente excluir este cadastro?')) return;
 
-    const novosContatos = contatos.filter((c) => c.id !== id);
+    const novosContatos = contatos.filter((c) => c.id !== id && c.nome !== id);
     setContatos(novosContatos);
 
     if (typeof window !== 'undefined') {
@@ -724,27 +755,32 @@ export default function CabocloAgroCRM() {
     const capNum = formData.capacidade_carga_toneladas ? parseFloat(formData.capacidade_carga_toneladas) : null;
 
     if (editingId) {
-      const novosContatos = contatos.map((c) =>
-        c.id === editingId
-          ? {
-              ...c,
-              tipo: formData.tipo,
-              status_crm: formData.status_crm,
-              nome: formData.nome,
-              telefone: formData.telefone || null,
-              endereco_fazenda: formData.endereco_fazenda || null,
-              quantidade_animais: formData.quantidade_animais || null,
-              capacidade_carga_toneladas: capNum,
-              tipo_veiculo: formData.tipo_veiculo || null,
-              observacao: formData.observacao || null,
-            }
-          : c
-      );
+      const novosContatos = contatos.map((c) => {
+        const isTarget = (c.id && c.id === editingId) || c.nome === editingId;
+        if (isTarget) {
+          return {
+            ...c,
+            id: c.id || editingId,
+            tipo: formData.tipo,
+            status_crm: formData.status_crm,
+            nome: formData.nome,
+            telefone: formData.telefone || null,
+            endereco_fazenda: formData.endereco_fazenda || null,
+            quantidade_animais: formData.quantidade_animais || null,
+            capacidade_carga_toneladas: capNum,
+            tipo_veiculo: formData.tipo_veiculo || null,
+            observacao: formData.observacao || null,
+          };
+        }
+        return c;
+      });
 
       setContatos(novosContatos);
 
       const novosPedidos = pedidos.map((p) =>
-        p.contato_id === editingId ? { ...p, nome_cliente: formData.nome } : p
+        p.contato_id === editingId || p.nome_cliente === editingId
+          ? { ...p, nome_cliente: formData.nome }
+          : p
       );
       setPedidos(novosPedidos);
 
@@ -757,18 +793,20 @@ export default function CabocloAgroCRM() {
         try {
           await supabase
             .from('contatos')
-            .update({
-              tipo: formData.tipo,
-              status_crm: formData.status_crm,
-              nome: formData.nome,
-              telefone: formData.telefone || null,
-              endereco_fazenda: formData.endereco_fazenda || null,
-              quantidade_animais: formData.quantidade_animais || null,
-              capacidade_carga_toneladas: capNum,
-              tipo_veiculo: formData.tipo_veiculo || null,
-              observacao: formData.observacao || null,
-            })
-            .eq('id', editingId);
+            .upsert([
+              {
+                id: editingId.startsWith('demo-') || editingId.startsWith('local-') ? undefined : editingId,
+                tipo: formData.tipo,
+                status_crm: formData.status_crm,
+                nome: formData.nome,
+                telefone: formData.telefone || null,
+                endereco_fazenda: formData.endereco_fazenda || null,
+                quantidade_animais: formData.quantidade_animais || null,
+                capacidade_carga_toneladas: capNum,
+                tipo_veiculo: formData.tipo_veiculo || null,
+                observacao: formData.observacao || null,
+              },
+            ]);
         } catch (e) {
           console.warn('Atualizado localmente:', e);
         }
