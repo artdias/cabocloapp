@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase, Atendimento, Contato, Pedido, ItemEstoque, ItemVendaPedido, isSupabaseConfigured, TipoEntidade, StatusCRM, StatusFinanceiro } from '@/lib/supabase';
 import {
   Mic,
@@ -331,6 +331,10 @@ export default function CabocloAgroCRM() {
   const [lembretesRespondidos, setLembretesRespondidos] = useState<LembreteRespondidoItem[]>([]);
   const [abaLembretes, setAbaLembretes] = useState<'pendentes' | 'respondidos'>('pendentes');
   const [adiarModal, setAdiarModal] = useState<{ id: string; nome: string } | null>(null);
+  // Estados da Aba Financeiro
+  const [subAbaFinanceiro, setSubAbaFinanceiro] = useState<'periodo' | 'clientes' | 'lancamentos'>('periodo');
+  const [filtroPeriodoFinanceiro, setFiltroPeriodoFinanceiro] = useState<'mes_atual' | '30dias' | 'ano_atual' | 'todos'>('mes_atual');
+
   // Estado para Sanfona (Expandir/Recolher Detalhes dos Contatos)
   const [contatosExpandidos, setContatosExpandidos] = useState<Record<string, boolean>>({});
 
@@ -1318,6 +1322,37 @@ export default function CabocloAgroCRM() {
     setWhatsappModal((prev) => ({ ...prev, isOpen: false }));
   };
 
+  // Alternar Status Financeiro (Pago / Pendente)
+  const alternarStatusFinanceiro = async (pedidoId: string) => {
+    const novosPedidos = pedidos.map((p) => {
+      if (p.id === pedidoId) {
+        const novoStatus: StatusFinanceiro = p.status_financeiro === 'pago' ? 'pendente' : 'pago';
+        return { ...p, status_financeiro: novoStatus };
+      }
+      return p;
+    });
+
+    setPedidos(novosPedidos);
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
+    }
+
+    if (isSupabaseConfigured) {
+      const ped = novosPedidos.find((p) => p.id === pedidoId);
+      if (ped) {
+        try {
+          await supabase
+            .from('pedidos')
+            .update({ status_financeiro: ped.status_financeiro })
+            .eq('id', pedidoId);
+        } catch (e) {
+          console.warn('Status atualizado localmente:', e);
+        }
+      }
+    }
+  };
+
   const terceirosTransportadores = contatos.filter((c) => c.tipo === 'terceiro');
 
   const limiteSeteDias = new Date();
@@ -1344,6 +1379,76 @@ export default function CabocloAgroCRM() {
   const totalCompras = pedidos
     .filter((p) => p.tipo_operacao === 'compra')
     .reduce((acc, curr) => acc + (curr.valor_total || 0), 0);
+
+  // Cálculos Financeiros por Período
+  const hoje = new Date();
+  const mesAtualNum = hoje.getMonth();
+  const anoAtualNum = hoje.getFullYear();
+
+  const pedidosVendaPeriodo = pedidos.filter((p) => {
+    if (p.tipo_operacao !== 'venda') return false;
+    if (filtroPeriodoFinanceiro === 'todos') return true;
+
+    const dataP = new Date(p.data_compra);
+    if (isNaN(dataP.getTime())) return true;
+
+    if (filtroPeriodoFinanceiro === 'mes_atual') {
+      return dataP.getMonth() === mesAtualNum && dataP.getFullYear() === anoAtualNum;
+    }
+    if (filtroPeriodoFinanceiro === '30dias') {
+      const trintaDiasAtras = new Date();
+      trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
+      return dataP >= trintaDiasAtras;
+    }
+    if (filtroPeriodoFinanceiro === 'ano_atual') {
+      return dataP.getFullYear() === anoAtualNum;
+    }
+    return true;
+  });
+
+  const totalVendasPeriodo = pedidosVendaPeriodo.reduce((acc, p) => acc + (p.valor_total || 0), 0);
+  const totalToneladasPeriodo = pedidosVendaPeriodo.reduce((acc, p) => acc + (p.quantidade_toneladas_num || 0), 0);
+  const ticketMedioPeriodo = pedidosVendaPeriodo.length > 0 ? totalVendasPeriodo / pedidosVendaPeriodo.length : 0;
+
+  // Agrupamento de Vendas por Cliente
+  const vendasAgrupadasPorCliente = useMemo(() => {
+    const mapa = new Map<
+      string,
+      {
+        nomeCliente: string;
+        totalComprado: number;
+        totalQtdTon: number;
+        qtdPedidos: number;
+        ultimoPedidoData: string | null;
+        ultimoProduto: string | null;
+      }
+    >();
+
+    pedidos.forEach((p) => {
+      if (p.tipo_operacao !== 'venda') return;
+
+      const key = p.nome_cliente || 'Cliente Diversos';
+      const atual = mapa.get(key) || {
+        nomeCliente: key,
+        totalComprado: 0,
+        totalQtdTon: 0,
+        qtdPedidos: 0,
+        ultimoPedidoData: null,
+        ultimoProduto: null,
+      };
+
+      mapa.set(key, {
+        nomeCliente: key,
+        totalComprado: atual.totalComprado + (p.valor_total || 0),
+        totalQtdTon: atual.totalQtdTon + (p.quantidade_toneladas_num || 0),
+        qtdPedidos: atual.qtdPedidos + 1,
+        ultimoPedidoData: atual.ultimoPedidoData || p.data_compra,
+        ultimoProduto: atual.ultimoProduto || p.produto,
+      });
+    });
+
+    return Array.from(mapa.values()).sort((a, b) => b.totalComprado - a.totalComprado);
+  }, [pedidos]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col pb-24">
@@ -2396,39 +2501,248 @@ export default function CabocloAgroCRM() {
         {/* ABA 5: FINANCEIRO */}
         {activeTab === 'financeiro' && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-slate-900 border border-emerald-500/30 p-3.5 rounded-2xl space-y-1">
-                <span className="text-[11px] text-slate-400 uppercase font-semibold block">Total Vendas</span>
-                <span className="text-lg font-extrabold text-emerald-400">
-                  R$ {totalVendas.toFixed(2)}
-                </span>
-              </div>
-              <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl space-y-1">
-                <span className="text-[11px] text-slate-400 uppercase font-semibold block">Compras / Fornecedor</span>
-                <span className="text-lg font-extrabold text-slate-200">
-                  R$ {totalCompras.toFixed(2)}
-                </span>
-              </div>
+            {/* Alternador de Visões: Período, Por Cliente, Lançamentos */}
+            <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+              <button
+                onClick={() => setSubAbaFinanceiro('periodo')}
+                className={`flex-1 py-1.5 rounded-lg font-bold transition-all text-center ${
+                  subAbaFinanceiro === 'periodo'
+                    ? 'bg-emerald-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                📅 Por Período
+              </button>
+              <button
+                onClick={() => setSubAbaFinanceiro('clientes')}
+                className={`flex-1 py-1.5 rounded-lg font-bold transition-all text-center ${
+                  subAbaFinanceiro === 'clientes'
+                    ? 'bg-sky-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                👥 Por Cliente
+              </button>
+              <button
+                onClick={() => setSubAbaFinanceiro('lancamentos')}
+                className={`flex-1 py-1.5 rounded-lg font-bold transition-all text-center ${
+                  subAbaFinanceiro === 'lancamentos'
+                    ? 'bg-purple-600 text-white shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                📜 Lançamentos
+              </button>
             </div>
 
-            <div className="space-y-2">
-              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
-                Lançamentos Financeiros
-              </h2>
-              {pedidos.map((p) => (
-                <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="font-bold text-white block">{p.nome_cliente}</span>
-                    <span className="text-[11px] text-slate-400">
-                      {p.produto} • R$ {p.valor_total ? p.valor_total.toFixed(2) : '0.00'}
+            {/* VISÃO 1: POR PERÍODO */}
+            {subAbaFinanceiro === 'periodo' && (
+              <div className="space-y-3.5">
+                {/* Filtro por Tempo */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+                  {[
+                    { id: 'mes_atual', label: '📅 Este Mês' },
+                    { id: '30dias', label: '🕒 Últimos 30 Dias' },
+                    { id: 'ano_atual', label: '📊 Este Ano' },
+                    { id: 'todos', label: '🌐 Todos os Períodos' },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      onClick={() => setFiltroPeriodoFinanceiro(item.id as any)}
+                      className={`px-3 py-1.5 rounded-full whitespace-nowrap font-medium border transition-all ${
+                        filtroPeriodoFinanceiro === item.id
+                          ? 'bg-emerald-500 text-slate-950 font-bold border-emerald-400'
+                          : 'bg-slate-900 text-slate-300 border-slate-800'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Métricas do Período */}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-slate-900 border border-emerald-500/40 p-3.5 rounded-2xl space-y-1">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                      <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Faturamento Total
+                    </span>
+                    <span className="text-base font-extrabold text-emerald-400">
+                      R$ {totalVendasPeriodo.toFixed(2)}
                     </span>
                   </div>
-                  <span className="px-2 py-1 rounded text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
-                    {p.status_financeiro === 'pago' ? 'PAGO' : 'PENDENTE'}
-                  </span>
+
+                  <div className="bg-slate-900 border border-sky-500/40 p-3.5 rounded-2xl space-y-1">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                      <Package className="w-3.5 h-3.5 text-sky-400" /> Volume Vendido
+                    </span>
+                    <span className="text-base font-extrabold text-sky-400">
+                      {totalToneladasPeriodo.toFixed(1)} toneladas
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-900 border border-purple-500/40 p-3.5 rounded-2xl space-y-1">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                      <ShoppingBag className="w-3.5 h-3.5 text-purple-400" /> Total Pedidos
+                    </span>
+                    <span className="text-base font-extrabold text-purple-400">
+                      {pedidosVendaPeriodo.length} vendas
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-900 border border-amber-500/40 p-3.5 rounded-2xl space-y-1">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Ticket Médio
+                    </span>
+                    <span className="text-base font-extrabold text-amber-400">
+                      R$ {ticketMedioPeriodo.toFixed(2)}
+                    </span>
+                  </div>
                 </div>
-              ))}
-            </div>
+
+                {/* Vendas do Período Listagem */}
+                <div className="space-y-2">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
+                    Vendas no Período ({pedidosVendaPeriodo.length})
+                  </h3>
+                  {pedidosVendaPeriodo.length === 0 ? (
+                    <div className="text-center py-6 text-slate-500 text-xs italic bg-slate-900/40 rounded-xl border border-slate-850">
+                      Nenhuma venda registrada para este período.
+                    </div>
+                  ) : (
+                    pedidosVendaPeriodo.map((p) => (
+                      <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center justify-between text-xs shadow-sm">
+                        <div>
+                          <span className="font-bold text-white block">{p.nome_cliente}</span>
+                          <span className="text-[11px] text-slate-400">
+                            {p.produto} ({p.quantidade || `${p.quantidade_toneladas_num || 1}t`}) • {p.data_compra}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="font-extrabold text-emerald-400 block">
+                            R$ {p.valor_total ? p.valor_total.toFixed(2) : '0.00'}
+                          </span>
+                          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded border ${
+                            p.status_financeiro === 'pago'
+                              ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                              : 'bg-amber-950 text-amber-300 border-amber-800'
+                          }`}>
+                            {p.status_financeiro === 'pago' ? 'PAGO' : 'PENDENTE'}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* VISÃO 2: POR CLIENTE */}
+            {subAbaFinanceiro === 'clientes' && (
+              <div className="space-y-3">
+                <div className="bg-slate-900 border border-sky-500/30 p-3.5 rounded-2xl flex items-center justify-between text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Clientes Compradores</span>
+                    <span className="text-base font-extrabold text-sky-400">{vendasAgrupadasPorCliente.length} clientes</span>
+                  </div>
+                  <span className="text-xs text-slate-400 italic">Ordenado por Maior Faturamento</span>
+                </div>
+
+                <div className="space-y-2.5">
+                  {vendasAgrupadasPorCliente.length === 0 ? (
+                    <div className="text-center py-6 text-slate-500 text-xs italic bg-slate-900/40 rounded-xl border border-slate-850">
+                      Nenhum faturamento por cliente registrado.
+                    </div>
+                  ) : (
+                    vendasAgrupadasPorCliente.map((item, index) => {
+                      const pctRepresentacao = totalVendas > 0 ? (item.totalComprado / totalVendas) * 100 : 0;
+
+                      return (
+                        <div key={index} className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2.5 shadow-sm">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-full bg-slate-800 text-slate-300 text-[10px] font-bold flex items-center justify-center font-mono border border-slate-700">
+                                #{index + 1}
+                              </span>
+                              <span className="font-bold text-sm text-white">{item.nomeCliente}</span>
+                            </div>
+                            <span className="font-extrabold text-emerald-400 text-sm font-mono">
+                              R$ {item.totalComprado.toFixed(2)}
+                            </span>
+                          </div>
+
+                          {/* Barra de Progresso da Porcentagem de Vendas */}
+                          <div className="space-y-1">
+                            <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-850">
+                              <div
+                                className="bg-gradient-to-r from-emerald-500 to-green-400 h-full rounded-full transition-all duration-500"
+                                style={{ width: `${Math.min(100, Math.max(5, pctRepresentacao))}%` }}
+                              />
+                            </div>
+                            <div className="flex justify-between text-[10px] text-slate-400">
+                              <span>{pctRepresentacao.toFixed(1)}% das vendas totais</span>
+                              <span>{item.totalQtdTon.toFixed(1)} toneladas</span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-850">
+                            <span>🛒 {item.qtdPedidos} {item.qtdPedidos === 1 ? 'pedido' : 'pedidos'} efetuados</span>
+                            <span className="text-slate-500 font-mono">Última: {item.ultimoPedidoData || 'Recente'}</span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* VISÃO 3: LANÇAMENTOS GERAIS */}
+            {subAbaFinanceiro === 'lancamentos' && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-slate-900 border border-emerald-500/30 p-3.5 rounded-2xl space-y-1">
+                    <span className="text-[11px] text-slate-400 uppercase font-semibold block">Total Vendas</span>
+                    <span className="text-lg font-extrabold text-emerald-400">
+                      R$ {totalVendas.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-2xl space-y-1">
+                    <span className="text-[11px] text-slate-400 uppercase font-semibold block">Compras / Fornecedor</span>
+                    <span className="text-lg font-extrabold text-slate-200">
+                      R$ {totalCompras.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
+                    Lançamentos Financeiros ({pedidos.length})
+                  </h2>
+                  {pedidos.map((p) => (
+                    <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center justify-between text-xs shadow-sm">
+                      <div>
+                        <span className="font-bold text-white block">{p.nome_cliente}</span>
+                        <span className="text-[11px] text-slate-400">
+                          {p.produto} • R$ {p.valor_total ? p.valor_total.toFixed(2) : '0.00'}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={() => p.id && alternarStatusFinanceiro(p.id)}
+                        className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer active:scale-95 ${
+                          p.status_financeiro === 'pago'
+                            ? 'bg-emerald-950 text-emerald-400 border-emerald-800 hover:bg-emerald-900'
+                            : 'bg-amber-950 text-amber-400 border-amber-800 hover:bg-amber-900'
+                        }`}
+                        title="Clique para alternar o status do pagamento"
+                      >
+                        {p.status_financeiro === 'pago' ? '✅ PAGO' : '⏳ PENDENTE'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
