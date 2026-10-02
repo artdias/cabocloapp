@@ -2015,7 +2015,13 @@ export default function CabocloAgroCRM() {
               ].map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => setFiltroContato(item.id)}
+                  onClick={() => {
+                    if (item.id === 'terceiro') {
+                      setActiveTab('terceiros');
+                    } else {
+                      setFiltroContato(item.id);
+                    }
+                  }}
                   className={`px-3 py-1.5 rounded-full whitespace-nowrap font-medium border ${
                     filtroContato === item.id
                       ? 'bg-emerald-500 text-slate-950 font-bold border-emerald-400'
@@ -2154,88 +2160,137 @@ export default function CabocloAgroCRM() {
           </div>
         )}
 
-        {/* ABA 3: TERCEIROS */}
+        {/* ABA 3: TERCEIROS - TELA ÚNICA E UNIFICADA */}
         {activeTab === 'terceiros' && (
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">
               <div>
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                  Terceiros & Freteiros Alocáveis
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Truck className="w-4 h-4 text-amber-400" /> Terceiros & Freteiros Alocáveis
                 </h2>
                 <p className="text-[11px] text-slate-500">
-                  Selecione o caminhão ideal pela capacidade de carga para evitar viagens perdidas.
+                  Gestão unificada de caminhões e capacidade de carga ({terceirosTransportadores.length})
                 </p>
               </div>
               <button
                 onClick={() => abrirCadastroManual('terceiro')}
-                className="bg-amber-600 hover:bg-amber-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1"
+                className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" /> Adicionar
               </button>
             </div>
 
             <div className="space-y-3">
-              {terceirosTransportadores.map((terceiro) => (
-                <div
-                  key={terceiro.id}
-                  className="bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-4 space-y-3 shadow-md"
-                >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <Truck className="w-4 h-4 text-amber-400" />
-                        <span className="font-bold text-sm text-white">{terceiro.nome}</span>
-                      </div>
-                      <span className="text-xs text-slate-400 block mt-0.5">
-                        {terceiro.tipo_veiculo || 'Caminhão de Frete'} • {terceiro.cidade || 'Região'}
-                      </span>
-                    </div>
+              {terceirosTransportadores.map((terceiro) => {
+                const cId = terceiro.id || '';
+                const isExpanded = !!contatosExpandidos[cId];
+                const temDetalhes = !!(
+                  terceiro.observacao ||
+                  terceiro.capacidade_carga_toneladas ||
+                  terceiro.tipo_veiculo
+                );
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => abrirEdicaoContato(terceiro)}
-                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
-                        title="Editar freteiro"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <span className="bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded text-xs font-extrabold font-mono">
-                        {terceiro.capacidade_carga_toneladas || 10} Ton
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs flex items-center justify-between">
-                    <span className="text-slate-400 text-[11px]">Simulação p/ 10t de silagem:</span>
-                    <span className="font-bold text-emerald-400">
-                      {(terceiro.capacidade_carga_toneladas || 10) >= 10
-                        ? '1 viagem (Capacidade suficiente)'
-                        : `${Math.ceil(10 / (terceiro.capacidade_carga_toneladas || 5))} viagens necessárias`}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-xs text-slate-400">📱 {terceiro.telefone || 'Sem telefone'}</span>
-                    <button
-                      onClick={() =>
-                        abrirWhatsAppComMensagem(
-                          terceiro.nome,
-                          terceiro.telefone,
-                          'frete_terceiro',
-                          {
-                            produto: 'Silagem de Milho',
-                            quantidade: '10 toneladas',
-                            endereco_fazenda: 'Fazenda Bela Vista (Vila Velha)',
-                          }
-                        )
-                      }
-                      className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow"
+                return (
+                  <div
+                    key={cId}
+                    className="bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-3.5 space-y-3 shadow-md transition-all"
+                  >
+                    {/* Linha Cabeçalho Principal (Clean) */}
+                    <div
+                      className="flex items-start justify-between gap-2 cursor-pointer select-none"
+                      onClick={() => temDetalhes && toggleExpandContato(cId)}
                     >
-                      <img src="/whatsapp.png" alt="WhatsApp" className="w-4 h-4 object-contain shrink-0" /> Cotar Frete
-                    </button>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-sm text-white">{terceiro.nome}</span>
+                          <span className="bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded text-[10px] font-extrabold font-mono">
+                            {terceiro.capacidade_carga_toneladas || 10} Ton
+                          </span>
+                        </div>
+
+                        <span className="text-xs text-slate-400 block mt-0.5">
+                          {terceiro.tipo_veiculo || 'Caminhão de Frete'}
+                          {terceiro.cidade ? ` • ${terceiro.cidade}` : ''}
+                        </span>
+
+                        {terceiro.telefone && (
+                          <span className="text-xs text-slate-400 flex items-center gap-1 mt-1 font-mono">
+                            <Phone className="w-3 h-3 text-slate-500" /> {terceiro.telefone}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => abrirEdicaoContato(terceiro)}
+                          className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                          title="Editar cadastro"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-amber-400" /> Editar
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            abrirWhatsAppComMensagem(
+                              terceiro.nome,
+                              terceiro.telefone,
+                              'frete_terceiro',
+                              {
+                                produto: 'Silagem de Milho',
+                                quantidade: '10 toneladas',
+                                endereco_fazenda: 'Fazenda Bela Vista (Vila Velha)',
+                              }
+                            )
+                          }
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow transition-colors"
+                        >
+                          <img src="/whatsapp.png" alt="WhatsApp" className="w-4 h-4 object-contain shrink-0" /> Cotar Frete
+                        </button>
+
+                        {temDetalhes && (
+                          <button
+                            onClick={() => toggleExpandContato(cId)}
+                            className="p-1 text-slate-400 hover:text-white transition-colors ml-0.5"
+                            title={isExpanded ? 'Ocultar detalhes' : 'Ver mais detalhes'}
+                          >
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4 text-amber-400" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-slate-400" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Detalhes Expandidos (Simulação de Frete & Observações) */}
+                    {isExpanded && temDetalhes && (
+                      <div className="pt-2 border-t border-slate-800/80 space-y-2 animate-fadeIn">
+                        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 text-xs flex items-center justify-between">
+                          <span className="text-slate-400 text-[11px]">Simulação p/ 10t de silagem:</span>
+                          <span className="font-bold text-emerald-400">
+                            {(terceiro.capacidade_carga_toneladas || 10) >= 10
+                              ? '1 viagem (Capacidade suficiente)'
+                              : `${Math.ceil(10 / (terceiro.capacidade_carga_toneladas || 5))} viagens necessárias`}
+                          </span>
+                        </div>
+
+                        {terceiro.observacao && (
+                          <p className="text-xs text-slate-300 bg-slate-950/60 p-2.5 rounded-xl italic border border-slate-850">
+                            &quot;{terceiro.observacao}&quot;
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
+                );
+              })}
+
+              {terceirosTransportadores.length === 0 && (
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-400 text-xs italic">
+                  Nenhum terceiro / freteiro cadastrado ainda. Clique em &quot;+ Adicionar&quot; para cadastrar um caminhoneiro.
                 </div>
-              ))}
+              )}
             </div>
           </div>
         )}
