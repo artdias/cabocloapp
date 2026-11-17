@@ -1,7 +1,29 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { supabase, Atendimento, Contato, Pedido, ItemEstoque, ItemVendaPedido, isSupabaseConfigured, TipoEntidade, StatusCRM, StatusFinanceiro } from '@/lib/supabase';
+import {
+  supabase,
+  Atendimento,
+  Contato,
+  Pedido,
+  ItemEstoque,
+  ItemVendaPedido,
+  isSupabaseConfigured,
+  TipoEntidade,
+  StatusCRM,
+  StatusFinanceiro,
+  DEMO_ID_MAP,
+  gerarUuid,
+  normalizarId,
+  salvarContatoNoBanco,
+  excluirContatoNoBanco,
+  parseContatosDoBanco,
+  salvarPedidoNoBanco,
+  excluirPedidoNoBanco,
+  parsePedidosDoBanco,
+  salvarEstoqueNoBanco,
+  carregarEstoqueDoBanco,
+} from '@/lib/supabase';
 import {
   Mic,
   Square,
@@ -86,10 +108,10 @@ const CLIMA_INICIAL: DadosClima = {
   ],
 };
 
-// Dados de Exemplo para Demonstração Imediata
+// Dados de Exemplo para Demonstração Imediata (com IDs sincronizados no Supabase)
 const DEMO_CONTATOS: Contato[] = [
   {
-    id: 'demo-1',
+    id: '11111111-1111-4111-8111-111111111101',
     tipo: 'cliente',
     status_crm: 'cliente_ativo',
     nome: 'João Paulo - Fazenda Bela Vista',
@@ -101,7 +123,7 @@ const DEMO_CONTATOS: Contato[] = [
     created_at: '2026-09-01T10:00:00Z',
   },
   {
-    id: 'demo-2',
+    id: '11111111-1111-4111-8111-111111111102',
     tipo: 'cliente',
     status_crm: 'possibilidade',
     nome: 'Marcos Ribeiro - Sítio São José',
@@ -113,7 +135,7 @@ const DEMO_CONTATOS: Contato[] = [
     created_at: '2026-09-25T14:30:00Z',
   },
   {
-    id: 'demo-terc-1',
+    id: '11111111-1111-4111-8111-111111111103',
     tipo: 'terceiro',
     status_crm: 'parceiro',
     nome: 'Sebastião Fretes (Caminhão Toco)',
@@ -125,7 +147,7 @@ const DEMO_CONTATOS: Contato[] = [
     created_at: '2026-09-10T08:00:00Z',
   },
   {
-    id: 'demo-terc-2',
+    id: '11111111-1111-4111-8111-111111111104',
     tipo: 'terceiro',
     status_crm: 'parceiro',
     nome: 'Gilmar Transportes (Caminhão Truck)',
@@ -137,7 +159,7 @@ const DEMO_CONTATOS: Contato[] = [
     created_at: '2026-09-12T09:00:00Z',
   },
   {
-    id: 'demo-terc-3',
+    id: '11111111-1111-4111-8111-111111111105',
     tipo: 'terceiro',
     status_crm: 'parceiro',
     nome: 'TransSilagem Bitrem',
@@ -152,8 +174,8 @@ const DEMO_CONTATOS: Contato[] = [
 
 const DEMO_PEDIDOS: Pedido[] = [
   {
-    id: 'demo-ped-1',
-    contato_id: 'demo-1',
+    id: '22222222-2222-4222-8222-222222222201',
+    contato_id: '11111111-1111-4111-8111-111111111101',
     nome_cliente: 'João Paulo - Fazenda Bela Vista',
     produto: 'Silagem de Milho',
     quantidade: '10 toneladas',
@@ -166,8 +188,8 @@ const DEMO_PEDIDOS: Pedido[] = [
     observacao: 'Entrega pendente na Rodovia do Sol, Km 18',
   },
   {
-    id: 'demo-ped-2',
-    contato_id: 'demo-2',
+    id: '22222222-2222-4222-8222-222222222202',
+    contato_id: '11111111-1111-4111-8111-111111111102',
     nome_cliente: 'Marcos Ribeiro - Sítio São José',
     produto: 'Silagem de Sorgo',
     quantidade: '50 sacos (approx 2.5t)',
@@ -220,12 +242,84 @@ const DEMO_ESTOQUE: ItemEstoque[] = [
   },
 ];
 
+function limparContatosLocais(lista: Contato[]): Contato[] {
+  const vistos = new Set<string>();
+  const resultado: Contato[] = [];
+
+  for (const c of lista) {
+    if (!c || !c.nome) continue;
+    const nomeLimpo = c.nome.trim();
+    if (!nomeLimpo || nomeLimpo.startsWith('__') || nomeLimpo.toLowerCase() === 'teste tese') {
+      continue;
+    }
+
+    const idNorm = c.id && DEMO_ID_MAP[c.id] ? DEMO_ID_MAP[c.id] : c.id;
+    const chaveUnica = `${c.tipo || 'cliente'}:${nomeLimpo.toLowerCase()}`;
+
+    if (idNorm?.startsWith('local-') && vistos.has(chaveUnica)) {
+      continue;
+    }
+    vistos.add(chaveUnica);
+    resultado.push({ ...c, id: idNorm, nome: nomeLimpo });
+  }
+
+  return resultado;
+}
+
+function limparPedidosLocais(lista: Pedido[]): Pedido[] {
+  const resultado: Pedido[] = [];
+  for (const p of lista) {
+    if (!p || !p.nome_cliente) continue;
+    const nomeLimpo = p.nome_cliente.trim();
+    if (!nomeLimpo || nomeLimpo.startsWith('__') || nomeLimpo.toLowerCase() === 'teste tese') {
+      continue;
+    }
+    const idNorm = p.id && DEMO_ID_MAP[p.id] ? DEMO_ID_MAP[p.id] : p.id;
+    const contatoNorm = p.contato_id && DEMO_ID_MAP[p.contato_id] ? DEMO_ID_MAP[p.contato_id] : p.contato_id;
+    resultado.push({ ...p, id: idNorm, contato_id: contatoNorm });
+  }
+  return resultado;
+}
+
 export default function CabocloAgroCRM() {
   const [activeTab, setActiveTab] = useState<TabType>('voz');
   const [status, setStatus] = useState<string>('Pronto para gravar');
   const [transcript, setTranscript] = useState<string>('');
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Trava contra múltiplos cliques / travamentos ao salvar
+  const salvandoRef = useRef<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  // Validação e foco automático nos campos obrigatórios (Cadastro Manual & Voz)
+  const [errosCadastro, setErrosCadastro] = useState<Record<string, string>>({});
+  const [avisoValidacaoCadastro, setAvisoValidacaoCadastro] = useState<string | null>(null);
+
+  const manualNomeRef = useRef<HTMLInputElement>(null);
+  const manualEnderecoRef = useRef<HTMLInputElement>(null);
+  const manualCapacidadeRef = useRef<HTMLInputElement>(null);
+  const manualVeiculoRef = useRef<HTMLInputElement>(null);
+  const manualTelefoneRef = useRef<HTMLInputElement>(null);
+
+  const vozNomeRef = useRef<HTMLInputElement>(null);
+  const vozEnderecoRef = useRef<HTMLInputElement>(null);
+  const vozCapacidadeRef = useRef<HTMLInputElement>(null);
+  const vozVeiculoRef = useRef<HTMLInputElement>(null);
+  const vozTelefoneRef = useRef<HTMLInputElement>(null);
+
+  // Validação e foco automático nos campos obrigatórios (Novo Pedido)
+  const [errosPedido, setErrosPedido] = useState<Record<string, string>>({});
+  const [avisoValidacaoPedido, setAvisoValidacaoPedido] = useState<string | null>(null);
+  const pedidoClienteRef = useRef<HTMLSelectElement>(null);
+  const pedidoQtdRefs = useRef<Record<number, HTMLInputElement | null>>({});
+
+  // Validação e foco automático nos campos obrigatórios (Estoque)
+  const [errosEstoque, setErrosEstoque] = useState<Record<string, string>>({});
+  const [avisoValidacaoEstoque, setAvisoValidacaoEstoque] = useState<string | null>(null);
+  const estoqueNomeRef = useRef<HTMLInputElement>(null);
+  const estoqueQtdRef = useRef<HTMLInputElement>(null);
+  const estoquePrecoRef = useRef<HTMLInputElement>(null);
 
   // Estado do Estoque e Sub-abas de Pedidos
   const [estoque, setEstoque] = useState<ItemEstoque[]>(DEMO_ESTOQUE);
@@ -349,6 +443,18 @@ export default function CabocloAgroCRM() {
   const recognitionRef = useRef<any>(null);
   const hojeStr = new Date().toISOString().split('T')[0];
 
+  const limparErroCampoCadastro = (campo: string) => {
+    setErrosCadastro((prev) => {
+      if (!prev[campo]) return prev;
+      const copia = { ...prev };
+      delete copia[campo];
+      if (Object.keys(copia).length === 0) {
+        setAvisoValidacaoCadastro(null);
+      }
+      return copia;
+    });
+  };
+
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setIsOnline(navigator.onLine);
@@ -364,8 +470,21 @@ export default function CabocloAgroCRM() {
         setIsOnline(false);
       };
 
+      const handleFocus = () => {
+        if (navigator.onLine && !salvandoRef.current) {
+          carregarTodosDados(true);
+        }
+      };
+
       window.addEventListener('online', handleOnline);
       window.addEventListener('offline', handleOffline);
+      window.addEventListener('focus', handleFocus);
+
+      const syncInterval = setInterval(() => {
+        if (navigator.onLine && !salvandoRef.current) {
+          carregarTodosDados(true);
+        }
+      }, 20000);
 
       // Carrega rascunhos salvos no localStorage
       const salvos = localStorage.getItem('caboclo_rascunhos_voz');
@@ -398,12 +517,20 @@ export default function CabocloAgroCRM() {
 
       const salvosContatos = localStorage.getItem('caboclo_contatos');
       if (salvosContatos) {
-        try { setContatos(JSON.parse(salvosContatos)); } catch (e) {}
+        try {
+          const limpos = limparContatosLocais(JSON.parse(salvosContatos));
+          setContatos(limpos);
+          localStorage.setItem('caboclo_contatos', JSON.stringify(limpos));
+        } catch (e) {}
       }
 
       const salvosPedidos = localStorage.getItem('caboclo_pedidos');
       if (salvosPedidos) {
-        try { setPedidos(JSON.parse(salvosPedidos)); } catch (e) {}
+        try {
+          const limposP = limparPedidosLocais(JSON.parse(salvosPedidos));
+          setPedidos(limposP);
+          localStorage.setItem('caboclo_pedidos', JSON.stringify(limposP));
+        } catch (e) {}
       }
 
       const SpeechRecognition =
@@ -444,67 +571,125 @@ export default function CabocloAgroCRM() {
         recognitionRef.current = recognition;
       }
 
+      carregarTodosDados();
+
       return () => {
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
+        window.removeEventListener('focus', handleFocus);
+        clearInterval(syncInterval);
       };
     }
-
-    carregarTodosDados();
   }, []);
 
-  const carregarTodosDados = async () => {
+  const carregarTodosDados = async (silencioso: boolean = false) => {
     if (!isSupabaseConfigured) return;
 
-    setLoading(true);
+    if (!silencioso) setLoading(true);
     try {
-      const { data: dataContatos } = await supabase
-        .from('contatos')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (dataContatos && dataContatos.length > 0) {
-        const salvosLocal = typeof window !== 'undefined' ? localStorage.getItem('caboclo_contatos') : null;
+      // 1. Migrar e enviar para o Supabase quaisquer cadastros locais (local-*) ainda não sincronizados
+      if (typeof window !== 'undefined') {
+        const salvosLocal = localStorage.getItem('caboclo_contatos');
         if (salvosLocal) {
           try {
-            const contatosLocais: Contato[] = JSON.parse(salvosLocal);
-            const mapaContatos = new Map<string, Contato>();
-            dataContatos.forEach((c) => { if (c.id) mapaContatos.set(c.id, c); });
-            contatosLocais.forEach((c) => { if (c.id) mapaContatos.set(c.id, c); else if (c.nome) mapaContatos.set(c.nome, c); });
-            setContatos(Array.from(mapaContatos.values()));
-          } catch (e) {
-            setContatos(dataContatos);
-          }
-        } else {
-          setContatos(dataContatos);
+            const contatosLocais = limparContatosLocais(JSON.parse(salvosLocal));
+            let houveMigracao = false;
+            const contatosMigrados: Contato[] = [];
+
+            for (const c of contatosLocais) {
+              if (c.id && c.id.startsWith('local-')) {
+                const novoUuid = gerarUuid();
+                const contatoAtualizado = { ...c, id: novoUuid };
+                const ok = await salvarContatoNoBanco(contatoAtualizado);
+                if (ok) {
+                  contatosMigrados.push(contatoAtualizado);
+                  houveMigracao = true;
+                } else {
+                  contatosMigrados.push(c);
+                }
+              } else {
+                contatosMigrados.push(c);
+              }
+            }
+
+            if (houveMigracao) {
+              localStorage.setItem('caboclo_contatos', JSON.stringify(contatosMigrados));
+            }
+          } catch {}
+        }
+
+        const salvosLocalP = localStorage.getItem('caboclo_pedidos');
+        if (salvosLocalP) {
+          try {
+            const pedidosLocais = limparPedidosLocais(JSON.parse(salvosLocalP));
+            let houveMigracaoP = false;
+            const pedidosMigrados: Pedido[] = [];
+
+            for (const p of pedidosLocais) {
+              if (p.id && (p.id.startsWith('local-ped-') || p.id.startsWith('ped-'))) {
+                const novoUuid = gerarUuid();
+                const pedidoAtualizado = { ...p, id: novoUuid };
+                const ok = await salvarPedidoNoBanco(pedidoAtualizado);
+                if (ok) {
+                  pedidosMigrados.push(pedidoAtualizado);
+                  houveMigracaoP = true;
+                } else {
+                  pedidosMigrados.push(p);
+                }
+              } else {
+                pedidosMigrados.push(p);
+              }
+            }
+
+            if (houveMigracaoP) {
+              localStorage.setItem('caboclo_pedidos', JSON.stringify(pedidosMigrados));
+            }
+          } catch {}
         }
       }
 
-      const { data: dataPedidos } = await supabase
+      // 2. Buscar dados atualizados do banco (fonte da verdade para todos os dispositivos)
+      const { data: dataContatos, error: errContatos } = await supabase
+        .from('contatos')
+        .select('*')
+        .order('created_at', { ascending: true });
+
+      if (!errContatos && dataContatos) {
+        const contatosDoBanco = parseContatosDoBanco(dataContatos);
+        if (contatosDoBanco.length > 0) {
+          setContatos(contatosDoBanco);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('caboclo_contatos', JSON.stringify(contatosDoBanco));
+          }
+        }
+      }
+
+      const { data: dataPedidos, error: errPedidos } = await supabase
         .from('pedidos')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: true });
 
-      if (dataPedidos && dataPedidos.length > 0) {
-        const salvosLocalP = typeof window !== 'undefined' ? localStorage.getItem('caboclo_pedidos') : null;
-        if (salvosLocalP) {
-          try {
-            const pedidosLocais: Pedido[] = JSON.parse(salvosLocalP);
-            const mapaPedidos = new Map<string, Pedido>();
-            dataPedidos.forEach((p) => { if (p.id) mapaPedidos.set(p.id, p); });
-            pedidosLocais.forEach((p) => { if (p.id) mapaPedidos.set(p.id, p); });
-            setPedidos(Array.from(mapaPedidos.values()));
-          } catch (e) {
-            setPedidos(dataPedidos);
+      if (!errPedidos && dataPedidos) {
+        const pedidosDoBanco = parsePedidosDoBanco(dataPedidos);
+        if (pedidosDoBanco.length > 0) {
+          setPedidos(pedidosDoBanco);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('caboclo_pedidos', JSON.stringify(pedidosDoBanco));
           }
-        } else {
-          setPedidos(dataPedidos);
+        }
+      }
+
+      const estoqueBanco = await carregarEstoqueDoBanco();
+      if (estoqueBanco && estoqueBanco.length > 0) {
+        setEstoque(estoqueBanco);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('caboclo_estoque', JSON.stringify(estoqueBanco));
         }
       }
     } catch (err) {
       console.warn('Erro ao carregar dados:', err);
     } finally {
-      setLoading(false);
+      if (!silencioso) setLoading(false);
     }
   };
 
@@ -576,6 +761,8 @@ export default function CabocloAgroCRM() {
     prox.setDate(prox.getDate() + 7);
 
     setEditingId(null);
+    setErrosCadastro({});
+    setAvisoValidacaoCadastro(null);
     setFormData({
       tipo: 'cliente',
       status_crm: 'cliente_ativo',
@@ -602,6 +789,8 @@ export default function CabocloAgroCRM() {
     prox.setDate(prox.getDate() + 7);
 
     setEditingId(null);
+    setErrosCadastro({});
+    setAvisoValidacaoCadastro(null);
     setFormData({
       tipo: tipoInicial,
       status_crm: tipoInicial === 'terceiro' ? 'parceiro' : 'cliente_ativo',
@@ -609,8 +798,8 @@ export default function CabocloAgroCRM() {
       telefone: '',
       endereco_fazenda: '',
       quantidade_animais: '',
-      capacidade_carga_toneladas: tipoInicial === 'terceiro' ? '10' : '',
-      tipo_veiculo: tipoInicial === 'terceiro' ? 'Caminhão Truck (14t)' : '',
+      capacidade_carga_toneladas: '',
+      tipo_veiculo: '',
       produto: tipoInicial === 'terceiro' ? '' : 'Silagem de Milho',
       quantidade: '',
       valor_total: '',
@@ -627,6 +816,8 @@ export default function CabocloAgroCRM() {
 
     const targetId = contato.id || contato.nome;
     setEditingId(targetId);
+    setErrosCadastro({});
+    setAvisoValidacaoCadastro(null);
     setFormData({
       tipo: contato.tipo,
       status_crm: contato.status_crm,
@@ -650,7 +841,8 @@ export default function CabocloAgroCRM() {
   const excluirContato = async (id: string) => {
     if (!confirm('Deseja realmente excluir este cadastro?')) return;
 
-    const novosContatos = contatos.filter((c) => c.id !== id && c.nome !== id);
+    const idAlvo = DEMO_ID_MAP[id] || id;
+    const novosContatos = contatos.filter((c) => c.id !== id && c.id !== idAlvo && c.nome !== id);
     setContatos(novosContatos);
 
     if (typeof window !== 'undefined') {
@@ -661,13 +853,7 @@ export default function CabocloAgroCRM() {
     setEditingId(null);
     setFormData(null);
 
-    if (isSupabaseConfigured) {
-      try {
-        await supabase.from('contatos').delete().eq('id', id);
-      } catch (e) {
-        console.warn('Excluído localmente:', e);
-      }
-    }
+    await excluirContatoNoBanco(idAlvo);
   };
 
   // Gravação de Voz
@@ -676,6 +862,8 @@ export default function CabocloAgroCRM() {
     setTranscript('');
     setEditingId(null);
     setFormData(null);
+    setErrosCadastro({});
+    setAvisoValidacaoCadastro(null);
 
     try {
       recognitionRef.current?.start();
@@ -721,6 +909,8 @@ export default function CabocloAgroCRM() {
       const res = await response.json();
 
       setEditingId(null);
+      setErrosCadastro({});
+      setAvisoValidacaoCadastro(null);
       setFormData({
         tipo: res.tipo_entidade || 'cliente',
         status_crm: res.status_crm || 'possibilidade',
@@ -747,152 +937,219 @@ export default function CabocloAgroCRM() {
     }
   };
 
-  // Salvar ou Atualizar Cadastro
+  // Salvar ou Atualizar Cadastro com Validação de Campos Obrigatórios, Foco Automático e Sincronização no Banco
   const salvarCadastroConfirmado = async () => {
-    if (!formData || !formData.nome.trim()) {
-      alert('Por favor, informe ao menos o Nome.');
+    if (!formData || salvandoRef.current) return;
+
+    // 1. Validar Campos Obrigatórios e Focar no Primeiro Campo Faltante
+    const novosErros: Record<string, string> = {};
+    const nomesCamposFaltantes: string[] = [];
+
+    if (!formData.nome.trim()) {
+      novosErros.nome = 'Informe o nome (obrigatório)';
+      nomesCamposFaltantes.push('Nome');
+    }
+
+    if (formData.tipo === 'cliente' && !formData.endereco_fazenda.trim()) {
+      novosErros.endereco_fazenda = 'Informe o endereço da fazenda (obrigatório)';
+      nomesCamposFaltantes.push('Endereço da Fazenda');
+    }
+
+    if (formData.tipo === 'terceiro') {
+      const capVal = parseFloat(formData.capacidade_carga_toneladas);
+      if (!formData.capacidade_carga_toneladas.trim() || isNaN(capVal) || capVal <= 0) {
+        novosErros.capacidade_carga_toneladas = 'Informe a capacidade em toneladas (obrigatório)';
+        nomesCamposFaltantes.push('Capacidade (Toneladas)');
+      }
+      if (!formData.tipo_veiculo.trim()) {
+        novosErros.tipo_veiculo = 'Informe o tipo de veículo/caminhão (obrigatório)';
+        nomesCamposFaltantes.push('Tipo de Veículo');
+      }
+    }
+
+    if (!formData.telefone.trim()) {
+      novosErros.telefone = 'Informe o telefone / WhatsApp (obrigatório)';
+      nomesCamposFaltantes.push('Telefone / WhatsApp');
+    }
+
+    if (Object.keys(novosErros).length > 0) {
+      setErrosCadastro(novosErros);
+      setAvisoValidacaoCadastro(
+        `Preencha os campos obrigatórios destacados em vermelho: ${nomesCamposFaltantes.join(', ')}.`
+      );
+
+      const primeiroInputComErro = isManualModalOpen
+        ? novosErros.nome
+          ? manualNomeRef.current
+          : novosErros.endereco_fazenda
+          ? manualEnderecoRef.current
+          : novosErros.capacidade_carga_toneladas
+          ? manualCapacidadeRef.current
+          : novosErros.tipo_veiculo
+          ? manualVeiculoRef.current
+          : manualTelefoneRef.current
+        : novosErros.nome
+        ? vozNomeRef.current
+        : novosErros.endereco_fazenda
+        ? vozEnderecoRef.current
+        : novosErros.capacidade_carga_toneladas
+        ? vozCapacidadeRef.current
+        : novosErros.tipo_veiculo
+        ? vozVeiculoRef.current
+        : vozTelefoneRef.current;
+
+      if (primeiroInputComErro) {
+        primeiroInputComErro.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => {
+          primeiroInputComErro.focus();
+        }, 50);
+      }
       return;
     }
 
-    const capNum = formData.capacidade_carga_toneladas ? parseFloat(formData.capacidade_carga_toneladas) : null;
+    // 2. Trava síncrona imediata para impedir duplicidade por múltiplos cliques
+    salvandoRef.current = true;
+    setIsSaving(true);
+    setErrosCadastro({});
+    setAvisoValidacaoCadastro(null);
 
-    if (editingId) {
-      const novosContatos = contatos.map((c) => {
-        const isTarget = (c.id && c.id === editingId) || c.nome === editingId;
-        if (isTarget) {
-          return {
-            ...c,
-            id: c.id || editingId,
-            tipo: formData.tipo,
-            status_crm: formData.status_crm,
-            nome: formData.nome,
-            telefone: formData.telefone || null,
-            endereco_fazenda: formData.endereco_fazenda || null,
-            quantidade_animais: formData.quantidade_animais || null,
-            capacidade_carga_toneladas: capNum,
-            tipo_veiculo: formData.tipo_veiculo || null,
-            observacao: formData.observacao || null,
-          };
-        }
-        return c;
-      });
+    try {
+      const capNum = formData.capacidade_carga_toneladas ? parseFloat(formData.capacidade_carga_toneladas) : null;
+      const nomeLimpo = formData.nome.trim();
 
-      setContatos(novosContatos);
+      if (editingId) {
+        const idNormalizado = normalizarId(editingId);
+        let contatoEditadoObj: Contato | null = null;
 
-      const novosPedidos = pedidos.map((p) =>
-        p.contato_id === editingId || p.nome_cliente === editingId
-          ? { ...p, nome_cliente: formData.nome }
-          : p
-      );
-      setPedidos(novosPedidos);
-
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('caboclo_contatos', JSON.stringify(novosContatos));
-        localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
-      }
-
-      if (isSupabaseConfigured) {
-        try {
-          await supabase
-            .from('contatos')
-            .upsert([
-              {
-                id: editingId.startsWith('demo-') || editingId.startsWith('local-') ? undefined : editingId,
-                tipo: formData.tipo,
-                status_crm: formData.status_crm,
-                nome: formData.nome,
-                telefone: formData.telefone || null,
-                endereco_fazenda: formData.endereco_fazenda || null,
-                quantidade_animais: formData.quantidade_animais || null,
-                capacidade_carga_toneladas: capNum,
-                tipo_veiculo: formData.tipo_veiculo || null,
-                observacao: formData.observacao || null,
-              },
-            ]);
-        } catch (e) {
-          console.warn('Atualizado localmente:', e);
-        }
-      }
-    } else {
-      const novoContato: Contato = {
-        id: `local-${Date.now()}`,
-        tipo: formData.tipo,
-        status_crm: formData.status_crm,
-        nome: formData.nome,
-        telefone: formData.telefone || null,
-        endereco_fazenda: formData.endereco_fazenda || null,
-        quantidade_animais: formData.quantidade_animais || null,
-        capacidade_carga_toneladas: capNum,
-        tipo_veiculo: formData.tipo_veiculo || null,
-        observacao: formData.observacao || null,
-        created_at: new Date().toISOString(),
-      };
-
-      const novosContatos = [novoContato, ...contatos];
-      setContatos(novosContatos);
-
-      let novosPedidos = pedidos;
-      if (formData.tipo !== 'terceiro' && (formData.produto || formData.quantidade)) {
-        let qtdTonNum = 1.0;
-        if (formData.quantidade) {
-          const match = formData.quantidade.match(/(\d+([.,]\d+)?)/);
-          if (match) qtdTonNum = parseFloat(match[1].replace(',', '.'));
-        }
-
-        const novoPedido: Pedido = {
-          id: `local-ped-${Date.now()}`,
-          contato_id: novoContato.id,
-          nome_cliente: formData.nome,
-          produto: formData.produto || 'Silagem',
-          quantidade: formData.quantidade || '1',
-          quantidade_toneladas_num: qtdTonNum,
-          valor_total: formData.valor_total ? parseFloat(formData.valor_total) : 0,
-          data_compra: hojeStr,
-          data_previsao_fim_estoque: formData.data_previsao_fim_estoque || null,
-          status_financeiro: 'pendente',
-          tipo_operacao: formData.tipo === 'fornecedor' ? 'compra' : 'venda',
-          observacao: formData.observacao || null,
-        };
-
-        novosPedidos = [novoPedido, ...pedidos];
-        setPedidos(novosPedidos);
-      }
-
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('caboclo_contatos', JSON.stringify(novosContatos));
-        localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
-      }
-
-      if (isSupabaseConfigured) {
-        try {
-          await supabase.from('contatos').insert([
-            {
+        const novosContatos = contatos.map((c) => {
+          const isTarget = (c.id && (c.id === editingId || c.id === idNormalizado)) || c.nome === editingId;
+          if (isTarget) {
+            contatoEditadoObj = {
+              ...c,
+              id: idNormalizado,
               tipo: formData.tipo,
               status_crm: formData.status_crm,
-              nome: formData.nome,
-              telefone: formData.telefone || null,
-              endereco_fazenda: formData.endereco_fazenda || null,
-              quantidade_animais: formData.quantidade_animais || null,
+              nome: nomeLimpo,
+              telefone: formData.telefone.trim() || null,
+              endereco_fazenda: formData.endereco_fazenda.trim() || null,
+              quantidade_animais: formData.quantidade_animais.trim() || null,
               capacidade_carga_toneladas: capNum,
-              tipo_veiculo: formData.tipo_veiculo || null,
-              observacao: formData.observacao || null,
-            },
-          ]);
-        } catch (e) {
-          console.warn('Salvo localmente:', e);
+              tipo_veiculo: formData.tipo_veiculo.trim() || null,
+              observacao: formData.observacao.trim() || null,
+            };
+            return contatoEditadoObj;
+          }
+          return c;
+        });
+
+        setContatos(novosContatos);
+
+        const novosPedidos = pedidos.map((p) =>
+          p.contato_id === editingId || p.contato_id === idNormalizado || p.nome_cliente === editingId
+            ? { ...p, contato_id: idNormalizado, nome_cliente: nomeLimpo }
+            : p
+        );
+        setPedidos(novosPedidos);
+
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('caboclo_contatos', JSON.stringify(novosContatos));
+          localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
+        }
+
+        // Fecha o modal imediatamente para evitar travamento visual e cliques repetidos
+        setIsManualModalOpen(false);
+        setEditingId(null);
+        setFormData(null);
+        setTranscript('');
+        setStatus('✅ Salvo com sucesso!');
+
+        if (contatoEditadoObj) {
+          await salvarContatoNoBanco(contatoEditadoObj);
+        }
+      } else {
+        // Verifica se já existe exatamente o mesmo nome + tipo para evitar duplicação acidental
+        const existenteMesmoNome = contatos.find(
+          (c) => c.tipo === formData.tipo && c.nome.trim().toLowerCase() === nomeLimpo.toLowerCase()
+        );
+
+        const idFinal = existenteMesmoNome?.id ? normalizarId(existenteMesmoNome.id) : gerarUuid();
+
+        const novoContato: Contato = {
+          id: idFinal,
+          tipo: formData.tipo,
+          status_crm: formData.status_crm,
+          nome: nomeLimpo,
+          telefone: formData.telefone.trim() || null,
+          endereco_fazenda: formData.endereco_fazenda.trim() || null,
+          quantidade_animais: formData.quantidade_animais.trim() || null,
+          capacidade_carga_toneladas: capNum,
+          tipo_veiculo: formData.tipo_veiculo.trim() || null,
+          observacao: formData.observacao.trim() || null,
+          created_at: existenteMesmoNome?.created_at || new Date().toISOString(),
+        };
+
+        const novosContatos = existenteMesmoNome
+          ? contatos.map((c) => (c.id === existenteMesmoNome.id ? novoContato : c))
+          : [novoContato, ...contatos];
+
+        setContatos(novosContatos);
+
+        let pedidoCriadoParaBanco: Pedido | null = null;
+        let novosPedidos = pedidos;
+
+        if (formData.tipo !== 'terceiro' && (formData.quantidade.trim() || formData.valor_total.trim())) {
+          let qtdTonNum = 1.0;
+          if (formData.quantidade) {
+            const match = formData.quantidade.match(/(\d+([.,]\d+)?)/);
+            if (match) qtdTonNum = parseFloat(match[1].replace(',', '.'));
+          }
+
+          const novoPedido: Pedido = {
+            id: gerarUuid(),
+            contato_id: novoContato.id,
+            nome_cliente: nomeLimpo,
+            produto: formData.produto.trim() || 'Silagem de Milho',
+            quantidade: formData.quantidade.trim() || '1',
+            quantidade_toneladas_num: qtdTonNum,
+            valor_total: formData.valor_total ? parseFloat(formData.valor_total) : 0,
+            data_compra: hojeStr,
+            data_previsao_fim_estoque: formData.data_previsao_fim_estoque || null,
+            status_financeiro: 'pendente',
+            tipo_operacao: formData.tipo === 'fornecedor' ? 'compra' : 'venda',
+            observacao: formData.observacao.trim() || null,
+            created_at: new Date().toISOString(),
+          };
+
+          pedidoCriadoParaBanco = novoPedido;
+          novosPedidos = [novoPedido, ...pedidos];
+          setPedidos(novosPedidos);
+        }
+
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('caboclo_contatos', JSON.stringify(novosContatos));
+          localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
+        }
+
+        // Fecha o modal e limpa o formulário imediatamente
+        setIsManualModalOpen(false);
+        setEditingId(null);
+        setFormData(null);
+        setTranscript('');
+        setStatus('✅ Salvo com sucesso!');
+
+        await salvarContatoNoBanco(novoContato);
+        if (pedidoCriadoParaBanco) {
+          await salvarPedidoNoBanco(pedidoCriadoParaBanco);
         }
       }
+
+      setTimeout(() => {
+        setStatus('Pronto para gravar');
+      }, 1500);
+    } finally {
+      salvandoRef.current = false;
+      setIsSaving(false);
     }
-
-    setStatus('✅ Salvo com sucesso!');
-    setIsManualModalOpen(false);
-
-    setTimeout(() => {
-      setEditingId(null);
-      setFormData(null);
-      setTranscript('');
-      setStatus('Pronto para gravar');
-    }, 1500);
   };
 
   // Funções de Criação de Pedido com Cliente + Itens do Estoque
@@ -914,6 +1171,8 @@ export default function CabocloAgroCRM() {
   // Abrir Modal de Edição de Pedido Existente
   const abrirEdicaoPedido = (pedido: Pedido) => {
     setEditingPedidoId(pedido.id || null);
+    setErrosPedido({});
+    setAvisoValidacaoPedido(null);
     setNovoPedidoForm({
       clienteId: pedido.contato_id || pedido.nome_cliente || '',
       terceiroId: pedido.terceiro_id || '',
@@ -932,82 +1191,153 @@ export default function CabocloAgroCRM() {
   const excluirPedido = async (id: string) => {
     if (!confirm('Deseja realmente excluir este pedido?')) return;
 
-    const novaLista = pedidos.filter((p) => p.id !== id);
+    const idAlvo = DEMO_ID_MAP[id] || id;
+    const novaLista = pedidos.filter((p) => p.id !== id && p.id !== idAlvo);
     setPedidos(novaLista);
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('caboclo_pedidos', JSON.stringify(novaLista));
     }
 
-    if (isSupabaseConfigured) {
-      try {
-        await supabase.from('pedidos').delete().eq('id', id);
-      } catch (e) {
-        console.warn('Excluído localmente:', e);
-      }
-    }
+    await excluirPedidoNoBanco(idAlvo);
   };
 
   const salvarNovoPedido = async () => {
+    if (salvandoRef.current) return;
+
+    const novosErrosP: Record<string, string> = {};
+    const faltantesP: string[] = [];
+
     if (!novoPedidoForm.clienteId) {
-      alert('Por favor, selecione um cliente para o pedido.');
+      novosErrosP.clienteId = 'Selecione o cliente para este pedido (obrigatório)';
+      faltantesP.push('Selecionar Cliente');
+    }
+
+    let primeiroIndiceItemInvalido: number | null = null;
+    novoPedidoForm.itens.forEach((itemForm, idx) => {
+      const q = parseFloat(itemForm.quantidade);
+      if (!itemForm.quantidade || !itemForm.quantidade.trim() || isNaN(q) || q <= 0) {
+        novosErrosP[`item_${idx}`] = 'Informe uma quantidade maior que zero';
+        if (primeiroIndiceItemInvalido === null) {
+          primeiroIndiceItemInvalido = idx;
+          faltantesP.push(`Quantidade do Item #${idx + 1}`);
+        }
+      }
+    });
+
+    if (Object.keys(novosErrosP).length > 0) {
+      setErrosPedido(novosErrosP);
+      setAvisoValidacaoPedido(
+        `Preencha os campos obrigatórios destacados em vermelho: ${faltantesP.join(', ')}.`
+      );
+
+      if (novosErrosP.clienteId && pedidoClienteRef.current) {
+        pedidoClienteRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => pedidoClienteRef.current?.focus(), 50);
+      } else if (primeiroIndiceItemInvalido !== null) {
+        const refQtd = pedidoQtdRefs.current[primeiroIndiceItemInvalido];
+        if (refQtd) {
+          refQtd.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setTimeout(() => refQtd.focus(), 50);
+        }
+      }
       return;
     }
 
-    const clienteObj = contatos.find((c) => c.id === novoPedidoForm.clienteId || c.nome === novoPedidoForm.clienteId);
-    const nomeClienteFinal = clienteObj?.nome || novoPedidoForm.clienteId;
+    salvandoRef.current = true;
+    setIsSaving(true);
+    setErrosPedido({});
+    setAvisoValidacaoPedido(null);
 
-    let valorTotalCalculado = 0;
-    let totalToneladasNum = 0;
-    const descricoesItens: string[] = [];
-    const itensVendaResultado: ItemVendaPedido[] = [];
+    try {
+      const clienteObj = contatos.find((c) => c.id === novoPedidoForm.clienteId || c.nome === novoPedidoForm.clienteId);
+      const nomeClienteFinal = clienteObj?.nome || novoPedidoForm.clienteId;
 
-    const novoEstoque = [...estoque];
+      let valorTotalCalculado = 0;
+      let totalToneladasNum = 0;
+      const descricoesItens: string[] = [];
+      const itensVendaResultado: ItemVendaPedido[] = [];
 
-    for (const itemForm of novoPedidoForm.itens) {
-      const prodIndex = novoEstoque.findIndex((e) => e.id === itemForm.estoqueId);
-      if (prodIndex >= 0) {
-        const prod = novoEstoque[prodIndex];
-        const qtdNum = parseFloat(itemForm.quantidade) || 1;
-        const sub = qtdNum * prod.preco_unitario;
+      const novoEstoque = [...estoque];
 
-        valorTotalCalculado += sub;
-        if (prod.unidade_medida === 'toneladas') {
-          totalToneladasNum += qtdNum;
-        } else {
-          totalToneladasNum += (qtdNum * 30) / 1000;
-        }
+      for (const itemForm of novoPedidoForm.itens) {
+        const prodIndex = novoEstoque.findIndex((e) => e.id === itemForm.estoqueId);
+        if (prodIndex >= 0) {
+          const prod = novoEstoque[prodIndex];
+          const qtdNum = parseFloat(itemForm.quantidade) || 1;
+          const sub = qtdNum * prod.preco_unitario;
 
-        descricoesItens.push(`${prod.nome} (${qtdNum} ${prod.unidade_medida})`);
-        itensVendaResultado.push({
-          estoque_id: prod.id,
-          nome_produto: prod.nome,
-          quantidade: qtdNum,
-          unidade_medida: prod.unidade_medida,
-          preco_unitario: prod.preco_unitario,
-          subtotal: sub,
-        });
+          valorTotalCalculado += sub;
+          if (prod.unidade_medida === 'toneladas') {
+            totalToneladasNum += qtdNum;
+          } else {
+            totalToneladasNum += (qtdNum * 30) / 1000;
+          }
 
-        // Dar baixa automática no Estoque apenas se for novo pedido!
-        if (!editingPedidoId) {
-          novoEstoque[prodIndex] = {
-            ...prod,
-            quantidade_disponivel: Math.max(0, prod.quantidade_disponivel - qtdNum),
-          };
+          descricoesItens.push(`${prod.nome} (${qtdNum} ${prod.unidade_medida})`);
+          itensVendaResultado.push({
+            estoque_id: prod.id,
+            nome_produto: prod.nome,
+            quantidade: qtdNum,
+            unidade_medida: prod.unidade_medida,
+            preco_unitario: prod.preco_unitario,
+            subtotal: sub,
+          });
+
+          // Dar baixa automática no Estoque apenas se for novo pedido!
+          if (!editingPedidoId) {
+            novoEstoque[prodIndex] = {
+              ...prod,
+              quantidade_disponivel: Math.max(0, prod.quantidade_disponivel - qtdNum),
+            };
+          }
         }
       }
-    }
 
-    const dias = parseInt(novoPedidoForm.diasEstoqueFim) || 30;
-    const dPrevisao = new Date();
-    dPrevisao.setDate(dPrevisao.getDate() + dias);
-    const dataPrevisaoStr = dPrevisao.toISOString().split('T')[0];
+      const dias = parseInt(novoPedidoForm.diasEstoqueFim) || 30;
+      const dPrevisao = new Date();
+      dPrevisao.setDate(dPrevisao.getDate() + dias);
+      const dataPrevisaoStr = dPrevisao.toISOString().split('T')[0];
 
-    if (editingPedidoId) {
-      const pedExistente = pedidos.find((p) => p.id === editingPedidoId);
-      const updatedPed: Pedido = {
-        ...pedExistente,
-        id: editingPedidoId,
+      if (editingPedidoId) {
+        const idPedNorm = normalizarId(editingPedidoId);
+        const pedExistente = pedidos.find((p) => p.id === editingPedidoId || p.id === idPedNorm);
+        const updatedPed: Pedido = {
+          ...pedExistente,
+          id: idPedNorm,
+          contato_id: clienteObj?.id || null,
+          terceiro_id: novoPedidoForm.terceiroId || null,
+          nome_cliente: nomeClienteFinal,
+          produto: descricoesItens.join(' + ') || 'Silagem',
+          quantidade: descricoesItens.join(', '),
+          quantidade_toneladas_num: totalToneladasNum,
+          itens_venda: itensVendaResultado,
+          valor_total: valorTotalCalculado,
+          data_compra: novoPedidoForm.dataCompra || hojeStr,
+          data_previsao_fim_estoque: dataPrevisaoStr,
+          status_financeiro: novoPedidoForm.statusFinanceiro,
+          tipo_operacao: pedExistente?.tipo_operacao || 'venda',
+          observacao: novoPedidoForm.observacao || null,
+        };
+
+        const novaLista = pedidos.map((p) => (p.id === editingPedidoId || p.id === idPedNorm ? updatedPed : p));
+        setPedidos(novaLista);
+
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('caboclo_pedidos', JSON.stringify(novaLista));
+        }
+
+        setEditingPedidoId(null);
+        setIsNovoPedidoModalOpen(false);
+        setStatus('✅ Pedido atualizado com sucesso!');
+
+        await salvarPedidoNoBanco(updatedPed);
+        setTimeout(() => setStatus('Pronto para gravar'), 2000);
+        return;
+      }
+
+      const novoPed: Pedido = {
+        id: gerarUuid(),
         contato_id: clienteObj?.id || null,
         terceiro_id: novoPedidoForm.terceiroId || null,
         nome_cliente: nomeClienteFinal,
@@ -1019,75 +1349,37 @@ export default function CabocloAgroCRM() {
         data_compra: novoPedidoForm.dataCompra || hojeStr,
         data_previsao_fim_estoque: dataPrevisaoStr,
         status_financeiro: novoPedidoForm.statusFinanceiro,
-        tipo_operacao: pedExistente?.tipo_operacao || 'venda',
+        tipo_operacao: 'venda',
         observacao: novoPedidoForm.observacao || null,
+        created_at: new Date().toISOString(),
       };
 
-      const novaLista = pedidos.map((p) => (p.id === editingPedidoId ? updatedPed : p));
-      setPedidos(novaLista);
+      const novaListaPed = [novoPed, ...pedidos];
+      setPedidos(novaListaPed);
+      setEstoque(novoEstoque);
 
       if (typeof window !== 'undefined') {
-        localStorage.setItem('caboclo_pedidos', JSON.stringify(novaLista));
+        localStorage.setItem('caboclo_pedidos', JSON.stringify(novaListaPed));
+        localStorage.setItem('caboclo_estoque', JSON.stringify(novoEstoque));
       }
 
-      if (isSupabaseConfigured) {
-        try {
-          await supabase.from('pedidos').update(updatedPed).eq('id', editingPedidoId);
-        } catch (e) {
-          console.warn('Atualizado localmente:', e);
-        }
-      }
-
-      setEditingPedidoId(null);
       setIsNovoPedidoModalOpen(false);
-      setStatus('✅ Pedido atualizado com sucesso!');
+      setStatus('✅ Pedido criado e estoque atualizado!');
+
+      await salvarPedidoNoBanco(novoPed);
+      await salvarEstoqueNoBanco(novoEstoque);
       setTimeout(() => setStatus('Pronto para gravar'), 2000);
-      return;
+    } finally {
+      salvandoRef.current = false;
+      setIsSaving(false);
     }
-
-    const novoPed: Pedido = {
-      id: `ped-${Date.now()}`,
-      contato_id: clienteObj?.id || null,
-      terceiro_id: novoPedidoForm.terceiroId || null,
-      nome_cliente: nomeClienteFinal,
-      produto: descricoesItens.join(' + ') || 'Silagem',
-      quantidade: descricoesItens.join(', '),
-      quantidade_toneladas_num: totalToneladasNum,
-      itens_venda: itensVendaResultado,
-      valor_total: valorTotalCalculado,
-      data_compra: novoPedidoForm.dataCompra || hojeStr,
-      data_previsao_fim_estoque: dataPrevisaoStr,
-      status_financeiro: novoPedidoForm.statusFinanceiro,
-      tipo_operacao: 'venda',
-      observacao: novoPedidoForm.observacao || null,
-      created_at: new Date().toISOString(),
-    };
-
-    const novaListaPed = [novoPed, ...pedidos];
-    setPedidos(novaListaPed);
-    setEstoque(novoEstoque);
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('caboclo_pedidos', JSON.stringify(novaListaPed));
-      localStorage.setItem('caboclo_estoque', JSON.stringify(novoEstoque));
-    }
-
-    if (isSupabaseConfigured) {
-      try {
-        await supabase.from('pedidos').insert([novoPed]);
-      } catch (e) {
-        console.warn('Salvo localmente:', e);
-      }
-    }
-
-    setIsNovoPedidoModalOpen(false);
-    setStatus('✅ Pedido criado e estoque atualizado!');
-    setTimeout(() => setStatus('Pronto para gravar'), 2000);
   };
 
   // Abrir Modal de Edição de Item do Estoque Existente
   const abrirEdicaoEstoque = (item: ItemEstoque) => {
     setEditingEstoqueId(item.id);
+    setErrosEstoque({});
+    setAvisoValidacaoEstoque(null);
     setNovoItemEstoqueForm({
       nome: item.nome,
       quantidade: String(item.quantidade_disponivel),
@@ -1110,35 +1402,82 @@ export default function CabocloAgroCRM() {
       localStorage.setItem('caboclo_estoque', JSON.stringify(novaLista));
     }
 
-    if (isSupabaseConfigured) {
-      try {
-        await supabase.from('estoque').delete().eq('id', id);
-      } catch (e) {
-        console.warn('Excluído localmente:', e);
-      }
-    }
+    await salvarEstoqueNoBanco(novaLista);
   };
 
   const salvarNovoItemEstoque = async () => {
+    if (salvandoRef.current) return;
+
+    const novosErrosE: Record<string, string> = {};
+    const faltantesE: string[] = [];
+
     if (!novoItemEstoqueForm.nome.trim()) {
-      alert('Informe ao menos o Nome do produto no estoque.');
+      novosErrosE.nome = 'Informe o nome do produto (obrigatório)';
+      faltantesE.push('Nome do Produto');
+    }
+    if (!novoItemEstoqueForm.quantidade.trim() || isNaN(parseFloat(novoItemEstoqueForm.quantidade))) {
+      novosErrosE.quantidade = 'Informe a quantidade (obrigatório)';
+      faltantesE.push('Quantidade Inicial');
+    }
+    if (!novoItemEstoqueForm.preco.trim() || isNaN(parseFloat(novoItemEstoqueForm.preco))) {
+      novosErrosE.preco = 'Informe o preço unitário (obrigatório)';
+      faltantesE.push('Preço Unitário');
+    }
+
+    if (Object.keys(novosErrosE).length > 0) {
+      setErrosEstoque(novosErrosE);
+      setAvisoValidacaoEstoque(
+        `Preencha os campos obrigatórios destacados em vermelho: ${faltantesE.join(', ')}.`
+      );
+
+      const alvoRef = novosErrosE.nome
+        ? estoqueNomeRef.current
+        : novosErrosE.quantidade
+        ? estoqueQtdRef.current
+        : estoquePrecoRef.current;
+
+      if (alvoRef) {
+        alvoRef.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => alvoRef.focus(), 50);
+      }
       return;
     }
 
-    if (editingEstoqueId) {
-      const novaListaEstoque = estoque.map((item) =>
-        item.id === editingEstoqueId
-          ? {
-              ...item,
-              nome: novoItemEstoqueForm.nome,
-              quantidade_disponivel: parseFloat(novoItemEstoqueForm.quantidade) || 0,
-              unidade_medida: novoItemEstoqueForm.unidade || 'toneladas',
-              preco_unitario: parseFloat(novoItemEstoqueForm.preco) || 0,
-              alerta_minimo: parseFloat(novoItemEstoqueForm.alerta) || 10,
-              observacao: novoItemEstoqueForm.observacao || null,
-            }
-          : item
-      );
+    salvandoRef.current = true;
+    setIsSaving(true);
+    setErrosEstoque({});
+    setAvisoValidacaoEstoque(null);
+
+    try {
+      let novaListaEstoque: ItemEstoque[] = [];
+
+      if (editingEstoqueId) {
+        novaListaEstoque = estoque.map((item) =>
+          item.id === editingEstoqueId
+            ? {
+                ...item,
+                nome: novoItemEstoqueForm.nome.trim(),
+                quantidade_disponivel: parseFloat(novoItemEstoqueForm.quantidade) || 0,
+                unidade_medida: novoItemEstoqueForm.unidade || 'toneladas',
+                preco_unitario: parseFloat(novoItemEstoqueForm.preco) || 0,
+                alerta_minimo: parseFloat(novoItemEstoqueForm.alerta) || 10,
+                observacao: novoItemEstoqueForm.observacao || null,
+              }
+            : item
+        );
+        setEditingEstoqueId(null);
+      } else {
+        const novoItem: ItemEstoque = {
+          id: `est-${Date.now()}`,
+          nome: novoItemEstoqueForm.nome.trim(),
+          quantidade_disponivel: parseFloat(novoItemEstoqueForm.quantidade) || 0,
+          unidade_medida: novoItemEstoqueForm.unidade || 'toneladas',
+          preco_unitario: parseFloat(novoItemEstoqueForm.preco) || 0,
+          alerta_minimo: parseFloat(novoItemEstoqueForm.alerta) || 10,
+          observacao: novoItemEstoqueForm.observacao || null,
+        };
+        novaListaEstoque = [novoItem, ...estoque];
+      }
 
       setEstoque(novaListaEstoque);
 
@@ -1146,53 +1485,21 @@ export default function CabocloAgroCRM() {
         localStorage.setItem('caboclo_estoque', JSON.stringify(novaListaEstoque));
       }
 
-      if (isSupabaseConfigured) {
-        try {
-          await supabase
-            .from('estoque')
-            .update({
-              nome: novoItemEstoqueForm.nome,
-              quantidade_disponivel: parseFloat(novoItemEstoqueForm.quantidade) || 0,
-              unidade_medida: novoItemEstoqueForm.unidade || 'toneladas',
-              preco_unitario: parseFloat(novoItemEstoqueForm.preco) || 0,
-              alerta_minimo: parseFloat(novoItemEstoqueForm.alerta) || 10,
-              observacao: novoItemEstoqueForm.observacao || null,
-            })
-            .eq('id', editingEstoqueId);
-        } catch (e) {
-          console.warn('Atualizado localmente:', e);
-        }
-      }
+      setIsNovoItemEstoqueModalOpen(false);
+      setNovoItemEstoqueForm({
+        nome: '',
+        quantidade: '',
+        unidade: 'toneladas',
+        preco: '',
+        alerta: '10',
+        observacao: '',
+      });
 
-      setEditingEstoqueId(null);
-    } else {
-      const novoItem: ItemEstoque = {
-        id: `est-${Date.now()}`,
-        nome: novoItemEstoqueForm.nome,
-        quantidade_disponivel: parseFloat(novoItemEstoqueForm.quantidade) || 0,
-        unidade_medida: novoItemEstoqueForm.unidade || 'toneladas',
-        preco_unitario: parseFloat(novoItemEstoqueForm.preco) || 0,
-        alerta_minimo: parseFloat(novoItemEstoqueForm.alerta) || 10,
-        observacao: novoItemEstoqueForm.observacao || null,
-      };
-
-      const novaListaEstoque = [novoItem, ...estoque];
-      setEstoque(novaListaEstoque);
-
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('caboclo_estoque', JSON.stringify(novaListaEstoque));
-      }
+      await salvarEstoqueNoBanco(novaListaEstoque);
+    } finally {
+      salvandoRef.current = false;
+      setIsSaving(false);
     }
-
-    setIsNovoItemEstoqueModalOpen(false);
-    setNovoItemEstoqueForm({
-      nome: '',
-      quantidade: '',
-      unidade: 'toneladas',
-      preco: '',
-      alerta: '10',
-      observacao: '',
-    });
   };
 
   // Funções de Gerenciamento de Lembretes (Adiar, Excluir, Respondidos)
@@ -1322,10 +1629,12 @@ export default function CabocloAgroCRM() {
 
   // Alternar Status Financeiro (Pago / Pendente)
   const alternarStatusFinanceiro = async (pedidoId: string) => {
+    let pedidoAlterado: Pedido | null = null;
     const novosPedidos = pedidos.map((p) => {
       if (p.id === pedidoId) {
         const novoStatus: StatusFinanceiro = p.status_financeiro === 'pago' ? 'pendente' : 'pago';
-        return { ...p, status_financeiro: novoStatus };
+        pedidoAlterado = { ...p, status_financeiro: novoStatus };
+        return pedidoAlterado;
       }
       return p;
     });
@@ -1336,18 +1645,8 @@ export default function CabocloAgroCRM() {
       localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
     }
 
-    if (isSupabaseConfigured) {
-      const ped = novosPedidos.find((p) => p.id === pedidoId);
-      if (ped) {
-        try {
-          await supabase
-            .from('pedidos')
-            .update({ status_financeiro: ped.status_financeiro })
-            .eq('id', pedidoId);
-        } catch (e) {
-          console.warn('Status atualizado localmente:', e);
-        }
-      }
+    if (pedidoAlterado) {
+      await salvarPedidoNoBanco(pedidoAlterado);
     }
   };
 
@@ -1883,12 +2182,23 @@ export default function CabocloAgroCRM() {
                   </span>
                 </div>
 
+                {avisoValidacaoCadastro && (
+                  <div className="bg-red-950/90 border border-red-500 text-red-200 rounded-xl p-2.5 text-xs flex items-start gap-2 animate-pulse">
+                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                    <span className="font-semibold">{avisoValidacaoCadastro}</span>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
                     <label className="text-[10px] text-slate-400 block mb-0.5">Tipo</label>
                     <select
                       value={formData.tipo}
-                      onChange={(e) => setFormData({ ...formData, tipo: e.target.value as TipoEntidade })}
+                      onChange={(e) => {
+                        setErrosCadastro({});
+                        setAvisoValidacaoCadastro(null);
+                        setFormData({ ...formData, tipo: e.target.value as TipoEntidade });
+                      }}
                       className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
                     >
                       <option value="cliente">👤 Cliente</option>
@@ -1912,26 +2222,57 @@ export default function CabocloAgroCRM() {
                   </div>
 
                   <div className="col-span-2">
-                    <label className="text-[10px] text-slate-400 block mb-0.5">Nome / Fazenda / Motorista</label>
+                    <label className={`text-[10px] font-semibold block mb-0.5 ${errosCadastro.nome ? 'text-red-400' : 'text-slate-300'}`}>
+                      Nome / Fazenda / Motorista *
+                    </label>
                     <input
+                      ref={vozNomeRef}
                       type="text"
                       value={formData.nome}
-                      onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                      onChange={(e) => {
+                        limparErroCampoCadastro('nome');
+                        setFormData({ ...formData, nome: e.target.value });
+                      }}
+                      placeholder="Ex: João Paulo ou Sebastião Fretes"
+                      className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                        errosCadastro.nome
+                          ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                          : 'border-slate-700 focus:border-emerald-500'
+                      }`}
                     />
+                    {errosCadastro.nome && (
+                      <span className="text-[10px] text-red-400 font-semibold block mt-0.5">
+                        ⚠️ {errosCadastro.nome}
+                      </span>
+                    )}
                   </div>
 
                   {formData.tipo === 'cliente' && (
                     <>
                       <div className="col-span-2">
-                        <label className="text-[10px] text-slate-400 block mb-0.5">Endereço da Fazenda</label>
+                        <label className={`text-[10px] font-semibold block mb-0.5 ${errosCadastro.endereco_fazenda ? 'text-red-400' : 'text-slate-300'}`}>
+                          Endereço da Fazenda *
+                        </label>
                         <input
+                          ref={vozEnderecoRef}
                           type="text"
                           value={formData.endereco_fazenda}
-                          onChange={(e) => setFormData({ ...formData, endereco_fazenda: e.target.value })}
+                          onChange={(e) => {
+                            limparErroCampoCadastro('endereco_fazenda');
+                            setFormData({ ...formData, endereco_fazenda: e.target.value });
+                          }}
                           placeholder="Ex: BR-101 Km 45, Linhares"
-                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                          className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                            errosCadastro.endereco_fazenda
+                              ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                              : 'border-slate-700 focus:border-emerald-500'
+                          }`}
                         />
+                        {errosCadastro.endereco_fazenda && (
+                          <span className="text-[10px] text-red-400 font-semibold block mt-0.5">
+                            ⚠️ {errosCadastro.endereco_fazenda}
+                          </span>
+                        )}
                       </div>
 
                       <div>
@@ -1950,37 +2291,83 @@ export default function CabocloAgroCRM() {
                   {formData.tipo === 'terceiro' && (
                     <>
                       <div>
-                        <label className="text-[10px] text-slate-400 block mb-0.5">Carga Máx. (Toneladas)</label>
+                        <label className={`text-[10px] font-semibold block mb-0.5 ${errosCadastro.capacidade_carga_toneladas ? 'text-red-400' : 'text-slate-300'}`}>
+                          Carga Máx. (Toneladas) *
+                        </label>
                         <input
+                          ref={vozCapacidadeRef}
                           type="number"
                           value={formData.capacidade_carga_toneladas}
-                          onChange={(e) => setFormData({ ...formData, capacidade_carga_toneladas: e.target.value })}
+                          onChange={(e) => {
+                            limparErroCampoCadastro('capacidade_carga_toneladas');
+                            setFormData({ ...formData, capacidade_carga_toneladas: e.target.value });
+                          }}
                           placeholder="Ex: 14"
-                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                          className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                            errosCadastro.capacidade_carga_toneladas
+                              ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                              : 'border-slate-700 focus:border-amber-500'
+                          }`}
                         />
+                        {errosCadastro.capacidade_carga_toneladas && (
+                          <span className="text-[10px] text-red-400 font-semibold block mt-0.5">
+                            ⚠️ {errosCadastro.capacidade_carga_toneladas}
+                          </span>
+                        )}
                       </div>
 
                       <div>
-                        <label className="text-[10px] text-slate-400 block mb-0.5">Tipo do Caminhão</label>
+                        <label className={`text-[10px] font-semibold block mb-0.5 ${errosCadastro.tipo_veiculo ? 'text-red-400' : 'text-slate-300'}`}>
+                          Tipo do Caminhão *
+                        </label>
                         <input
+                          ref={vozVeiculoRef}
                           type="text"
                           value={formData.tipo_veiculo}
-                          onChange={(e) => setFormData({ ...formData, tipo_veiculo: e.target.value })}
+                          onChange={(e) => {
+                            limparErroCampoCadastro('tipo_veiculo');
+                            setFormData({ ...formData, tipo_veiculo: e.target.value });
+                          }}
                           placeholder="Ex: Truck 3 Eixos"
-                          className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                          className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                            errosCadastro.tipo_veiculo
+                              ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                              : 'border-slate-700 focus:border-amber-500'
+                          }`}
                         />
+                        {errosCadastro.tipo_veiculo && (
+                          <span className="text-[10px] text-red-400 font-semibold block mt-0.5">
+                            ⚠️ {errosCadastro.tipo_veiculo}
+                          </span>
+                        )}
                       </div>
                     </>
                   )}
 
                   <div>
-                    <label className="text-[10px] text-slate-400 block mb-0.5">Telefone</label>
+                    <label className={`text-[10px] font-semibold block mb-0.5 ${errosCadastro.telefone ? 'text-red-400' : 'text-slate-300'}`}>
+                      Telefone / WhatsApp *
+                    </label>
                     <input
+                      ref={vozTelefoneRef}
                       type="text"
                       value={formData.telefone}
-                      onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                      onChange={(e) => {
+                        limparErroCampoCadastro('telefone');
+                        setFormData({ ...formData, telefone: e.target.value });
+                      }}
+                      placeholder="Ex: 27999887766"
+                      className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                        errosCadastro.telefone
+                          ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                          : 'border-slate-700 focus:border-emerald-500'
+                      }`}
                     />
+                    {errosCadastro.telefone && (
+                      <span className="text-[10px] text-red-400 font-semibold block mt-0.5">
+                        ⚠️ {errosCadastro.telefone}
+                      </span>
+                    )}
                   </div>
 
                   <div>
@@ -1996,16 +2383,21 @@ export default function CabocloAgroCRM() {
 
                 <div className="flex gap-2 pt-1">
                   <button
-                    onClick={() => setFormData(null)}
+                    onClick={() => {
+                      setErrosCadastro({});
+                      setAvisoValidacaoCadastro(null);
+                      setFormData(null);
+                    }}
                     className="flex-1 bg-slate-800 text-slate-300 py-2 rounded-lg font-semibold text-xs"
                   >
                     Descartar
                   </button>
                   <button
                     onClick={salvarCadastroConfirmado}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1"
+                    disabled={isSaving}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white py-2 rounded-lg font-bold text-xs flex items-center justify-center gap-1"
                   >
-                    <Check className="w-4 h-4" /> Salvar Cadastro
+                    <Check className="w-4 h-4" /> {isSaving ? 'Salvando...' : 'Salvar Cadastro'}
                   </button>
                 </div>
               </div>
@@ -2062,7 +2454,7 @@ export default function CabocloAgroCRM() {
                     key={cId}
                     className="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 space-y-2 hover:border-slate-700 transition-all shadow-sm"
                   >
-                    {/* PARTE SUPERIOR CABEÇALHO (Circulada na imagem do usuário) */}
+                    {/* PARTE SUPERIOR CABEÇALHO */}
                     <div
                       className="flex items-start justify-between gap-2 cursor-pointer select-none"
                       onClick={() => temDetalhes && toggleExpandContato(cId)}
@@ -2096,6 +2488,14 @@ export default function CabocloAgroCRM() {
                           title="Editar cadastro"
                         >
                           <Edit3 className="w-3.5 h-3.5 text-amber-400" /> Editar
+                        </button>
+
+                        <button
+                          onClick={() => excluirContato(cId || contato.nome)}
+                          className="bg-slate-800 hover:bg-red-950 text-red-400 border border-slate-700 hover:border-red-800 p-1.5 rounded-lg text-xs transition-colors"
+                          title="Excluir cadastro"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
 
                         <button
@@ -2242,6 +2642,14 @@ export default function CabocloAgroCRM() {
                         </button>
 
                         <button
+                          onClick={() => excluirContato(cId || terceiro.nome)}
+                          className="bg-slate-800 hover:bg-red-950 text-red-400 border border-slate-700 hover:border-red-800 p-1.5 rounded-lg text-xs transition-colors"
+                          title="Excluir terceiro"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
                           onClick={() =>
                             abrirWhatsAppComMensagem(
                               terceiro.nome,
@@ -2339,6 +2747,8 @@ export default function CabocloAgroCRM() {
                 <button
                   onClick={() => {
                     setEditingPedidoId(null);
+                    setErrosPedido({});
+                    setAvisoValidacaoPedido(null);
                     setNovoPedidoForm({
                       clienteId: '',
                       terceiroId: '',
@@ -2358,6 +2768,8 @@ export default function CabocloAgroCRM() {
                 <button
                   onClick={() => {
                     setEditingEstoqueId(null);
+                    setErrosEstoque({});
+                    setAvisoValidacaoEstoque(null);
                     setNovoItemEstoqueForm({
                       nome: '',
                       quantidade: '',
@@ -2892,17 +3304,35 @@ export default function CabocloAgroCRM() {
                   {editingId ? 'Editar Cadastro Existente' : formData.tipo === 'terceiro' ? 'Novo Terceiro / Freteiro' : 'Novo Cadastro Manual'}
                 </span>
               </div>
-              <button onClick={() => setIsManualModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button
+                onClick={() => {
+                  setErrosCadastro({});
+                  setAvisoValidacaoCadastro(null);
+                  setIsManualModalOpen(false);
+                }}
+                className="text-slate-400 hover:text-white"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {avisoValidacaoCadastro && (
+              <div className="bg-red-950/90 border border-red-500 text-red-200 rounded-xl p-2.5 text-xs flex items-start gap-2 animate-pulse">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <span className="font-semibold">{avisoValidacaoCadastro}</span>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2.5 text-xs">
               <div>
                 <label className="text-[11px] text-slate-400 font-semibold block mb-1">Tipo de Registro</label>
                 <select
                   value={formData.tipo}
-                  onChange={(e) => setFormData({ ...formData, tipo: e.target.value as TipoEntidade })}
+                  onChange={(e) => {
+                    setErrosCadastro({});
+                    setAvisoValidacaoCadastro(null);
+                    setFormData({ ...formData, tipo: e.target.value as TipoEntidade });
+                  }}
                   className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
                 >
                   <option value="cliente">👤 Cliente</option>
@@ -2926,27 +3356,57 @@ export default function CabocloAgroCRM() {
               </div>
 
               <div className="col-span-2">
-                <label className="text-[11px] text-slate-400 font-semibold block mb-1">Nome / Fazenda / Motorista *</label>
+                <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.nome ? 'text-red-400' : 'text-slate-300'}`}>
+                  Nome / Fazenda / Motorista *
+                </label>
                 <input
+                  ref={manualNomeRef}
                   type="text"
                   value={formData.nome}
-                  onChange={(e) => setFormData({ ...formData, nome: e.target.value })}
+                  onChange={(e) => {
+                    limparErroCampoCadastro('nome');
+                    setFormData({ ...formData, nome: e.target.value });
+                  }}
                   placeholder="Ex: João Paulo ou Sebastião Fretes"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-emerald-500"
+                  className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                    errosCadastro.nome
+                      ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                      : 'border-slate-700 focus:border-emerald-500'
+                  }`}
                 />
+                {errosCadastro.nome && (
+                  <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                    ⚠️ {errosCadastro.nome}
+                  </span>
+                )}
               </div>
 
               {formData.tipo === 'cliente' && (
                 <>
                   <div className="col-span-2">
-                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Endereço da Fazenda</label>
+                    <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.endereco_fazenda ? 'text-red-400' : 'text-slate-300'}`}>
+                      Endereço da Fazenda *
+                    </label>
                     <input
+                      ref={manualEnderecoRef}
                       type="text"
                       value={formData.endereco_fazenda}
-                      onChange={(e) => setFormData({ ...formData, endereco_fazenda: e.target.value })}
+                      onChange={(e) => {
+                        limparErroCampoCadastro('endereco_fazenda');
+                        setFormData({ ...formData, endereco_fazenda: e.target.value });
+                      }}
                       placeholder="Ex: BR-101 Km 45, Linhares - ES"
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                      className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                        errosCadastro.endereco_fazenda
+                          ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                          : 'border-slate-700 focus:border-emerald-500'
+                      }`}
                     />
+                    {errosCadastro.endereco_fazenda && (
+                      <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                        ⚠️ {errosCadastro.endereco_fazenda}
+                      </span>
+                    )}
                   </div>
 
                   <div>
@@ -2965,38 +3425,83 @@ export default function CabocloAgroCRM() {
               {formData.tipo === 'terceiro' && (
                 <>
                   <div>
-                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Capacidade (Toneladas) *</label>
+                    <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.capacidade_carga_toneladas ? 'text-red-400' : 'text-slate-300'}`}>
+                      Capacidade (Toneladas) *
+                    </label>
                     <input
+                      ref={manualCapacidadeRef}
                       type="number"
                       value={formData.capacidade_carga_toneladas}
-                      onChange={(e) => setFormData({ ...formData, capacidade_carga_toneladas: e.target.value })}
+                      onChange={(e) => {
+                        limparErroCampoCadastro('capacidade_carga_toneladas');
+                        setFormData({ ...formData, capacidade_carga_toneladas: e.target.value });
+                      }}
                       placeholder="Ex: 14"
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-amber-500"
+                      className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                        errosCadastro.capacidade_carga_toneladas
+                          ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                          : 'border-slate-700 focus:border-amber-500'
+                      }`}
                     />
+                    {errosCadastro.capacidade_carga_toneladas && (
+                      <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                        ⚠️ {errosCadastro.capacidade_carga_toneladas}
+                      </span>
+                    )}
                   </div>
 
                   <div>
-                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Tipo de Veículo / Caminhão</label>
+                    <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.tipo_veiculo ? 'text-red-400' : 'text-slate-300'}`}>
+                      Tipo de Veículo / Caminhão *
+                    </label>
                     <input
+                      ref={manualVeiculoRef}
                       type="text"
                       value={formData.tipo_veiculo}
-                      onChange={(e) => setFormData({ ...formData, tipo_veiculo: e.target.value })}
+                      onChange={(e) => {
+                        limparErroCampoCadastro('tipo_veiculo');
+                        setFormData({ ...formData, tipo_veiculo: e.target.value });
+                      }}
                       placeholder="Ex: Truck 3 Eixos, Carreta"
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                      className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                        errosCadastro.tipo_veiculo
+                          ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                          : 'border-slate-700 focus:border-amber-500'
+                      }`}
                     />
+                    {errosCadastro.tipo_veiculo && (
+                      <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                        ⚠️ {errosCadastro.tipo_veiculo}
+                      </span>
+                    )}
                   </div>
                 </>
               )}
 
               <div>
-                <label className="text-[11px] text-slate-400 font-semibold block mb-1">Telefone / WhatsApp</label>
+                <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.telefone ? 'text-red-400' : 'text-slate-300'}`}>
+                  Telefone / WhatsApp *
+                </label>
                 <input
+                  ref={manualTelefoneRef}
                   type="text"
                   value={formData.telefone}
-                  onChange={(e) => setFormData({ ...formData, telefone: e.target.value })}
+                  onChange={(e) => {
+                    limparErroCampoCadastro('telefone');
+                    setFormData({ ...formData, telefone: e.target.value });
+                  }}
                   placeholder="Ex: 27999887766"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                  className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                    errosCadastro.telefone
+                      ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                      : 'border-slate-700 focus:border-emerald-500'
+                  }`}
                 />
+                {errosCadastro.telefone && (
+                  <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                    ⚠️ {errosCadastro.telefone}
+                  </span>
+                )}
               </div>
 
               {formData.tipo !== 'terceiro' && (
@@ -3059,16 +3564,21 @@ export default function CabocloAgroCRM() {
                 </button>
               )}
               <button
-                onClick={() => setIsManualModalOpen(false)}
+                onClick={() => {
+                  setErrosCadastro({});
+                  setAvisoValidacaoCadastro(null);
+                  setIsManualModalOpen(false);
+                }}
                 className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-semibold text-xs"
               >
                 Cancelar
               </button>
               <button
                 onClick={salvarCadastroConfirmado}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
+                disabled={isSaving}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
               >
-                <Check className="w-4 h-4" /> {editingId ? 'Salvar Edição' : 'Salvar Cadastro'}
+                <Check className="w-4 h-4" /> {isSaving ? 'Salvando...' : editingId ? 'Salvar Edição' : 'Salvar Cadastro'}
               </button>
             </div>
           </div>
@@ -3196,19 +3706,48 @@ export default function CabocloAgroCRM() {
                 <ShoppingBag className="w-5 h-5 text-emerald-400" />
                 <span>{editingPedidoId ? 'Editar Pedido de Venda' : 'Criar Novo Pedido de Venda'}</span>
               </div>
-              <button onClick={() => setIsNovoPedidoModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button
+                onClick={() => {
+                  setErrosPedido({});
+                  setAvisoValidacaoPedido(null);
+                  setIsNovoPedidoModalOpen(false);
+                }}
+                className="text-slate-400 hover:text-white"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
+            {avisoValidacaoPedido && (
+              <div className="bg-red-950/90 border border-red-500 text-red-200 rounded-xl p-2.5 text-xs flex items-start gap-2 animate-pulse">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <span className="font-semibold">{avisoValidacaoPedido}</span>
+              </div>
+            )}
+
             <div className="space-y-3 text-xs">
               {/* Seleção do Cliente */}
               <div>
-                <label className="text-[11px] text-slate-300 font-semibold block mb-1">1. Selecionar Cliente *</label>
+                <label className={`text-[11px] font-semibold block mb-1 ${errosPedido.clienteId ? 'text-red-400' : 'text-slate-300'}`}>
+                  1. Selecionar Cliente *
+                </label>
                 <select
+                  ref={pedidoClienteRef}
                   value={novoPedidoForm.clienteId}
-                  onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, clienteId: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2.5 text-slate-100 outline-none focus:border-emerald-500"
+                  onChange={(e) => {
+                    setErrosPedido((prev) => {
+                      const c = { ...prev };
+                      delete c.clienteId;
+                      if (Object.keys(c).length === 0) setAvisoValidacaoPedido(null);
+                      return c;
+                    });
+                    setNovoPedidoForm({ ...novoPedidoForm, clienteId: e.target.value });
+                  }}
+                  className={`w-full bg-slate-950 border rounded-xl p-2.5 text-slate-100 outline-none transition-all ${
+                    errosPedido.clienteId
+                      ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                      : 'border-slate-700 focus:border-emerald-500'
+                  }`}
                 >
                   <option value="">-- Selecione o Cliente Cadastrado --</option>
                   {contatos
@@ -3219,12 +3758,17 @@ export default function CabocloAgroCRM() {
                       </option>
                     ))}
                 </select>
+                {errosPedido.clienteId && (
+                  <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                    ⚠️ {errosPedido.clienteId}
+                  </span>
+                )}
               </div>
 
               {/* Itens do Pedido (Produtos do Estoque) */}
               <div className="space-y-2 border-t border-slate-800 pt-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-[11px] text-slate-300 font-semibold block">2. Itens da Venda (Estoque)</label>
+                  <label className="text-[11px] text-slate-300 font-semibold block">2. Itens da Venda (Estoque) *</label>
                   <button
                     onClick={adicionarLinhaItemPedido}
                     className="text-emerald-400 hover:text-emerald-300 text-[10px] font-bold flex items-center gap-0.5"
@@ -3236,9 +3780,15 @@ export default function CabocloAgroCRM() {
                 {novoPedidoForm.itens.map((itemForm, idx) => {
                   const prodSel = estoque.find((e) => e.id === itemForm.estoqueId);
                   const subTotalLinha = (parseFloat(itemForm.quantidade) || 0) * (prodSel?.preco_unitario || 0);
+                  const temErroItem = !!errosPedido[`item_${idx}`];
 
                   return (
-                    <div key={idx} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-2">
+                    <div
+                      key={idx}
+                      className={`bg-slate-950 p-2.5 rounded-xl border space-y-2 transition-all ${
+                        temErroItem ? 'border-red-500 ring-2 ring-red-500/30' : 'border-slate-800'
+                      }`}
+                    >
                       <div className="flex items-center gap-2">
                         <select
                           value={itemForm.estoqueId}
@@ -3269,16 +3819,29 @@ export default function CabocloAgroCRM() {
 
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <div className="flex items-center gap-1">
-                          <label className="text-[10px] text-slate-400">Qtd:</label>
+                          <label className={`text-[10px] font-semibold ${temErroItem ? 'text-red-400' : 'text-slate-400'}`}>
+                            Qtd *:
+                          </label>
                           <input
+                            ref={(el) => {
+                              pedidoQtdRefs.current[idx] = el;
+                            }}
                             type="number"
                             value={itemForm.quantidade}
                             onChange={(e) => {
+                              setErrosPedido((prev) => {
+                                const c = { ...prev };
+                                delete c[`item_${idx}`];
+                                if (Object.keys(c).length === 0) setAvisoValidacaoPedido(null);
+                                return c;
+                              });
                               const nov = [...novoPedidoForm.itens];
                               nov[idx].quantidade = e.target.value;
                               setNovoPedidoForm({ ...novoPedidoForm, itens: nov });
                             }}
-                            className="w-20 bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-center text-white outline-none font-bold"
+                            className={`w-20 bg-slate-900 border rounded-lg p-1.5 text-center text-white outline-none font-bold ${
+                              temErroItem ? 'border-red-500 bg-red-950/30' : 'border-slate-700'
+                            }`}
                           />
                           <span className="text-[10px] text-slate-400">{prodSel?.unidade_medida}</span>
                         </div>
@@ -3287,6 +3850,11 @@ export default function CabocloAgroCRM() {
                           R$ {subTotalLinha.toFixed(2)}
                         </span>
                       </div>
+                      {temErroItem && (
+                        <span className="text-[10px] text-red-400 font-semibold block">
+                          ⚠️ {errosPedido[`item_${idx}`]}
+                        </span>
+                      )}
                     </div>
                   );
                 })}
@@ -3327,16 +3895,21 @@ export default function CabocloAgroCRM() {
 
             <div className="flex gap-2 pt-2 border-t border-slate-800">
               <button
-                onClick={() => setIsNovoPedidoModalOpen(false)}
+                onClick={() => {
+                  setErrosPedido({});
+                  setAvisoValidacaoPedido(null);
+                  setIsNovoPedidoModalOpen(false);
+                }}
                 className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-semibold text-xs"
               >
                 Cancelar
               </button>
               <button
                 onClick={salvarNovoPedido}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
+                disabled={isSaving}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
               >
-                <Check className="w-4 h-4" /> {editingPedidoId ? 'Salvar Edição' : 'Concluir Pedido'}
+                <Check className="w-4 h-4" /> {isSaving ? 'Salvando...' : editingPedidoId ? 'Salvar Edição' : 'Concluir Pedido'}
               </button>
             </div>
           </div>
@@ -3352,33 +3925,87 @@ export default function CabocloAgroCRM() {
                 <Package className="w-5 h-5 text-sky-400" />
                 <span>{editingEstoqueId ? 'Editar Produto do Estoque' : 'Cadastrar Produto no Estoque'}</span>
               </div>
-              <button onClick={() => setIsNovoItemEstoqueModalOpen(false)} className="text-slate-400 hover:text-white">
+              <button
+                onClick={() => {
+                  setErrosEstoque({});
+                  setAvisoValidacaoEstoque(null);
+                  setIsNovoItemEstoqueModalOpen(false);
+                }}
+                className="text-slate-400 hover:text-white"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
+            {avisoValidacaoEstoque && (
+              <div className="bg-red-950/90 border border-red-500 text-red-200 rounded-xl p-2.5 text-xs flex items-start gap-2 animate-pulse">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <span className="font-semibold">{avisoValidacaoEstoque}</span>
+              </div>
+            )}
+
             <div className="space-y-2.5 text-xs">
               <div>
-                <label className="text-[11px] text-slate-300 font-semibold block mb-1">Nome do Produto *</label>
+                <label className={`text-[11px] font-semibold block mb-1 ${errosEstoque.nome ? 'text-red-400' : 'text-slate-300'}`}>
+                  Nome do Produto *
+                </label>
                 <input
+                  ref={estoqueNomeRef}
                   type="text"
                   value={novoItemEstoqueForm.nome}
-                  onChange={(e) => setNovoItemEstoqueForm({ ...novoItemEstoqueForm, nome: e.target.value })}
+                  onChange={(e) => {
+                    setErrosEstoque((prev) => {
+                      const c = { ...prev };
+                      delete c.nome;
+                      if (Object.keys(c).length === 0) setAvisoValidacaoEstoque(null);
+                      return c;
+                    });
+                    setNovoItemEstoqueForm({ ...novoItemEstoqueForm, nome: e.target.value });
+                  }}
                   placeholder="Ex: Silagem de Milho"
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-sky-500"
+                  className={`w-full bg-slate-950 border rounded-lg p-2 text-white outline-none transition-all ${
+                    errosEstoque.nome
+                      ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                      : 'border-slate-700 focus:border-sky-500'
+                  }`}
                 />
+                {errosEstoque.nome && (
+                  <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                    ⚠️ {errosEstoque.nome}
+                  </span>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">Qtd. Inicial</label>
+                  <label className={`text-[11px] font-semibold block mb-1 ${errosEstoque.quantidade ? 'text-red-400' : 'text-slate-300'}`}>
+                    Qtd. Inicial *
+                  </label>
                   <input
+                    ref={estoqueQtdRef}
                     type="number"
                     value={novoItemEstoqueForm.quantidade}
-                    onChange={(e) => setNovoItemEstoqueForm({ ...novoItemEstoqueForm, quantidade: e.target.value })}
+                    onChange={(e) => {
+                      setErrosEstoque((prev) => {
+                        const c = { ...prev };
+                        delete c.quantidade;
+                        if (Object.keys(c).length === 0) setAvisoValidacaoEstoque(null);
+                        return c;
+                      });
+                      setNovoItemEstoqueForm({ ...novoItemEstoqueForm, quantidade: e.target.value });
+                    }}
                     placeholder="Ex: 100"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none"
+                    className={`w-full bg-slate-950 border rounded-lg p-2 text-white outline-none transition-all ${
+                      errosEstoque.quantidade
+                        ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                        : 'border-slate-700 focus:border-sky-500'
+                    }`}
                   />
+                  {errosEstoque.quantidade && (
+                    <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                      ⚠️ {errosEstoque.quantidade}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label className="text-[11px] text-slate-300 font-semibold block mb-1">Unidade</label>
@@ -3396,14 +4023,34 @@ export default function CabocloAgroCRM() {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">Preço Unitário (R$)</label>
+                  <label className={`text-[11px] font-semibold block mb-1 ${errosEstoque.preco ? 'text-red-400' : 'text-slate-300'}`}>
+                    Preço Unitário (R$) *
+                  </label>
                   <input
+                    ref={estoquePrecoRef}
                     type="number"
                     value={novoItemEstoqueForm.preco}
-                    onChange={(e) => setNovoItemEstoqueForm({ ...novoItemEstoqueForm, preco: e.target.value })}
+                    onChange={(e) => {
+                      setErrosEstoque((prev) => {
+                        const c = { ...prev };
+                        delete c.preco;
+                        if (Object.keys(c).length === 0) setAvisoValidacaoEstoque(null);
+                        return c;
+                      });
+                      setNovoItemEstoqueForm({ ...novoItemEstoqueForm, preco: e.target.value });
+                    }}
                     placeholder="Ex: 450.00"
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none"
+                    className={`w-full bg-slate-950 border rounded-lg p-2 text-white outline-none transition-all ${
+                      errosEstoque.preco
+                        ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                        : 'border-slate-700 focus:border-sky-500'
+                    }`}
                   />
+                  {errosEstoque.preco && (
+                    <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                      ⚠️ {errosEstoque.preco}
+                    </span>
+                  )}
                 </div>
                 <div>
                   <label className="text-[11px] text-slate-300 font-semibold block mb-1">Alerta Mínimo</label>
@@ -3420,16 +4067,21 @@ export default function CabocloAgroCRM() {
 
             <div className="flex gap-2 pt-2 border-t border-slate-800">
               <button
-                onClick={() => setIsNovoItemEstoqueModalOpen(false)}
+                onClick={() => {
+                  setErrosEstoque({});
+                  setAvisoValidacaoEstoque(null);
+                  setIsNovoItemEstoqueModalOpen(false);
+                }}
                 className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-semibold text-xs"
               >
                 Cancelar
               </button>
               <button
                 onClick={salvarNovoItemEstoque}
-                className="flex-1 bg-sky-600 hover:bg-sky-500 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
+                disabled={isSaving}
+                className="flex-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
               >
-                <Check className="w-4 h-4" /> {editingEstoqueId ? 'Salvar Edição' : 'Salvar Produto'}
+                <Check className="w-4 h-4" /> {isSaving ? 'Salvando...' : editingEstoqueId ? 'Salvar Edição' : 'Salvar Produto'}
               </button>
             </div>
           </div>
@@ -3440,7 +4092,10 @@ export default function CabocloAgroCRM() {
       <nav className="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 py-2.5 px-4 z-40">
         <div className="max-w-md mx-auto flex items-center justify-around">
           <button
-            onClick={() => setActiveTab('voz')}
+            onClick={() => {
+              setActiveTab('voz');
+              if (isOnline) carregarTodosDados(true);
+            }}
             className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
               activeTab === 'voz' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -3450,7 +4105,10 @@ export default function CabocloAgroCRM() {
           </button>
 
           <button
-            onClick={() => setActiveTab('contatos')}
+            onClick={() => {
+              setActiveTab('contatos');
+              if (isOnline) carregarTodosDados(true);
+            }}
             className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
               activeTab === 'contatos' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -3460,7 +4118,10 @@ export default function CabocloAgroCRM() {
           </button>
 
           <button
-            onClick={() => setActiveTab('terceiros')}
+            onClick={() => {
+              setActiveTab('terceiros');
+              if (isOnline) carregarTodosDados(true);
+            }}
             className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
               activeTab === 'terceiros' ? 'text-amber-400' : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -3470,7 +4131,10 @@ export default function CabocloAgroCRM() {
           </button>
 
           <button
-            onClick={() => setActiveTab('pedidos')}
+            onClick={() => {
+              setActiveTab('pedidos');
+              if (isOnline) carregarTodosDados(true);
+            }}
             className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors relative ${
               activeTab === 'pedidos' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
             }`}
@@ -3483,7 +4147,10 @@ export default function CabocloAgroCRM() {
           </button>
 
           <button
-            onClick={() => setActiveTab('financeiro')}
+            onClick={() => {
+              setActiveTab('financeiro');
+              if (isOnline) carregarTodosDados(true);
+            }}
             className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
               activeTab === 'financeiro' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
             }`}
