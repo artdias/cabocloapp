@@ -25,6 +25,14 @@ export const supabase = createClient(
 export type TipoEntidade = 'cliente' | 'funcionario' | 'terceiro' | 'fornecedor';
 export type StatusCRM = 'possibilidade' | 'cliente_ativo' | 'inativo' | 'parceiro';
 export type StatusFinanceiro = 'pendente' | 'pago' | 'atrasado';
+export type EtapaPedido = 'pre_pedido' | 'aguardando_cliente' | 'agendado' | 'carregado';
+
+export interface CustoExtraPedido {
+  id: string;
+  descricao: string; // Ex: 'Chapa / Ajudante', 'Lona', 'Pedágio'
+  valor: number;
+  tipo: 'repassar_cliente' | 'custo_interno';
+}
 
 export interface Contato {
   id?: string;
@@ -75,6 +83,24 @@ export interface Pedido {
   valor_total?: number | null;
   data_compra: string;
   data_previsao_fim_estoque?: string | null;
+  data_vencimento_pagamento?: string | null;
+  qtd_parcelas?: number | null;
+  valor_adiantamento?: number | null;
+  dia_pagamento_parcelas?: string | null;
+  // Fluxo Operacional: Pré-Pedido -> Frete -> Cliente -> Agendamento/Funcionário -> Carregamento Real
+  etapa_pedido?: EtapaPedido | null;
+  tem_frete?: boolean | null;
+  valor_frete?: number | null;
+  tipo_frete_cobranca?: 'repassar_cliente' | 'custo_interno' | null;
+  data_carregamento?: string | null;
+  data_entrega?: string | null;
+  funcionario_id?: string | null;
+  nome_funcionario?: string | null;
+  toneladas_real?: number | null;
+  sacos_real?: number | null;
+  valor_base_produtos?: number | null;
+  custos_extras?: CustoExtraPedido[] | null;
+  estoque_baixado?: boolean | null;
   status_financeiro: StatusFinanceiro;
   tipo_operacao: 'venda' | 'compra';
   observacao?: string | null;
@@ -296,6 +322,23 @@ export async function salvarPedidoNoBanco(pedido: Pedido): Promise<boolean> {
     terceiro_id: pedido.terceiro_id ? DEMO_ID_MAP[pedido.terceiro_id] || pedido.terceiro_id : null,
     quantidade_toneladas_num: pedido.quantidade_toneladas_num ?? null,
     itens_venda: pedido.itens_venda || null,
+    data_vencimento_pagamento: pedido.data_vencimento_pagamento || null,
+    qtd_parcelas: pedido.qtd_parcelas ?? null,
+    valor_adiantamento: pedido.valor_adiantamento ?? null,
+    dia_pagamento_parcelas: pedido.dia_pagamento_parcelas || null,
+    etapa_pedido: pedido.etapa_pedido || 'pre_pedido',
+    tem_frete: pedido.tem_frete ?? true,
+    valor_frete: pedido.valor_frete ?? null,
+    tipo_frete_cobranca: pedido.tipo_frete_cobranca || 'repassar_cliente',
+    data_carregamento: pedido.data_carregamento || null,
+    data_entrega: pedido.data_entrega || null,
+    funcionario_id: pedido.funcionario_id || null,
+    nome_funcionario: pedido.nome_funcionario || null,
+    toneladas_real: pedido.toneladas_real ?? null,
+    sacos_real: pedido.sacos_real ?? null,
+    valor_base_produtos: pedido.valor_base_produtos ?? null,
+    custos_extras: pedido.custos_extras || null,
+    estoque_baixado: pedido.estoque_baixado ?? false,
   };
 
   const payload = {
@@ -392,6 +435,38 @@ export function parsePedidosDoBanco(rows: any[]): Pedido[] {
       valor_total: row.valor_total != null ? Number(row.valor_total) : 0,
       data_compra: row.data_compra || new Date().toISOString().split('T')[0],
       data_previsao_fim_estoque: row.data_previsao_fim_estoque || null,
+      data_vencimento_pagamento:
+        meta.data_vencimento_pagamento ?? anterior?.data_vencimento_pagamento ?? null,
+      qtd_parcelas: meta.qtd_parcelas ?? anterior?.qtd_parcelas ?? null,
+      valor_adiantamento:
+        meta.valor_adiantamento != null
+          ? Number(meta.valor_adiantamento)
+          : anterior?.valor_adiantamento ?? null,
+      dia_pagamento_parcelas:
+        meta.dia_pagamento_parcelas ?? anterior?.dia_pagamento_parcelas ?? null,
+      etapa_pedido:
+        meta.etapa_pedido ??
+        anterior?.etapa_pedido ??
+        (entityId === '22222222-2222-4222-8222-222222222201' ? 'carregado' : 'pre_pedido'),
+      tem_frete: meta.tem_frete ?? anterior?.tem_frete ?? true,
+      valor_frete:
+        meta.valor_frete != null ? Number(meta.valor_frete) : anterior?.valor_frete ?? null,
+      tipo_frete_cobranca:
+        meta.tipo_frete_cobranca ?? anterior?.tipo_frete_cobranca ?? 'repassar_cliente',
+      data_carregamento: meta.data_carregamento ?? anterior?.data_carregamento ?? null,
+      data_entrega: meta.data_entrega ?? anterior?.data_entrega ?? null,
+      funcionario_id: meta.funcionario_id ?? anterior?.funcionario_id ?? null,
+      nome_funcionario: meta.nome_funcionario ?? anterior?.nome_funcionario ?? null,
+      toneladas_real:
+        meta.toneladas_real != null ? Number(meta.toneladas_real) : anterior?.toneladas_real ?? null,
+      sacos_real:
+        meta.sacos_real != null ? Number(meta.sacos_real) : anterior?.sacos_real ?? null,
+      valor_base_produtos:
+        meta.valor_base_produtos != null
+          ? Number(meta.valor_base_produtos)
+          : anterior?.valor_base_produtos ?? null,
+      custos_extras: meta.custos_extras ?? anterior?.custos_extras ?? null,
+      estoque_baixado: meta.estoque_baixado ?? anterior?.estoque_baixado ?? false,
       status_financeiro: row.status_financeiro || 'pendente',
       tipo_operacao: row.tipo_operacao || 'venda',
       observacao: cleanObs,

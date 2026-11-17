@@ -30,6 +30,10 @@ import {
   buscarCoordenadasPorEndereco,
 } from '@/components/MapaInterativo';
 import {
+  FluxoPedidosCarregamento,
+  calcularTotaisPedido,
+} from '@/components/FluxoPedidosCarregamento';
+import {
   Mic,
   Square,
   Sparkles,
@@ -83,7 +87,7 @@ export interface RascunhoVoz {
 export interface LembreteRespondidoItem {
   id: string;
   nome: string;
-  tipo: 'estoque' | 'prospect';
+  tipo: 'estoque' | 'prospect' | 'pagamento';
   detalhe: string;
   data_resposta: string;
 }
@@ -364,6 +368,10 @@ export default function CabocloAgroCRM() {
     dataCompra: string;
     diasEstoqueFim: string;
     statusFinanceiro: StatusFinanceiro;
+    dataVencimentoPagamento: string;
+    qtdParcelas: string;
+    valorAdiantamento: string;
+    diaPagamentoParcelas: string;
     observacao: string;
   }>({
     clienteId: '',
@@ -372,6 +380,10 @@ export default function CabocloAgroCRM() {
     dataCompra: new Date().toISOString().split('T')[0],
     diasEstoqueFim: '30',
     statusFinanceiro: 'pendente',
+    dataVencimentoPagamento: '',
+    qtdParcelas: '',
+    valorAdiantamento: '',
+    diaPagamentoParcelas: '',
     observacao: '',
   });
 
@@ -1240,9 +1252,69 @@ export default function CabocloAgroCRM() {
       dataCompra: pedido.data_compra || hojeStr,
       diasEstoqueFim: '30',
       statusFinanceiro: pedido.status_financeiro || 'pendente',
+      dataVencimentoPagamento: pedido.data_vencimento_pagamento || '',
+      qtdParcelas: pedido.qtd_parcelas ? String(pedido.qtd_parcelas) : '',
+      valorAdiantamento: pedido.valor_adiantamento != null ? String(pedido.valor_adiantamento) : '',
+      diaPagamentoParcelas: pedido.dia_pagamento_parcelas || '',
       observacao: pedido.observacao || '',
     });
     setIsNovoPedidoModalOpen(true);
+  };
+
+  const atualizarPedidoDoFluxo = async (
+    pedidoAtualizado: Pedido,
+    descontarEstoque?: { toneladas?: number; sacos?: number }
+  ) => {
+    const idNorm = normalizarId(pedidoAtualizado.id);
+    const pedFinal = { ...pedidoAtualizado, id: idNorm };
+
+    const novaListaPed = pedidos.map((p) =>
+      p.id === pedidoAtualizado.id || p.id === idNorm ? pedFinal : p
+    );
+    setPedidos(novaListaPed);
+
+    let novoEstoque = [...estoque];
+    if (descontarEstoque) {
+      if (pedFinal.itens_venda && pedFinal.itens_venda.length > 0) {
+        const fatorEscala =
+          pedFinal.quantidade_toneladas_num && pedFinal.quantidade_toneladas_num > 0 && descontarEstoque.toneladas
+            ? descontarEstoque.toneladas / pedFinal.quantidade_toneladas_num
+            : 1;
+
+        for (const it of pedFinal.itens_venda) {
+          const idx = novoEstoque.findIndex((e) => e.id === it.estoque_id);
+          if (idx >= 0) {
+            const pEst = novoEstoque[idx];
+            const qtdDescontar =
+              pEst.unidade_medida === 'sacos' && descontarEstoque.sacos && descontarEstoque.sacos > 0
+                ? descontarEstoque.sacos
+                : Math.round(it.quantidade * fatorEscala * 100) / 100;
+            novoEstoque[idx] = {
+              ...pEst,
+              quantidade_disponivel: Math.max(0, pEst.quantidade_disponivel - qtdDescontar),
+            };
+          }
+        }
+      } else if (descontarEstoque.toneladas && novoEstoque.length > 0) {
+        novoEstoque[0] = {
+          ...novoEstoque[0],
+          quantidade_disponivel: Math.max(0, novoEstoque[0].quantidade_disponivel - descontarEstoque.toneladas),
+        };
+      }
+      setEstoque(novoEstoque);
+    }
+
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_pedidos', JSON.stringify(novaListaPed));
+      if (descontarEstoque) {
+        localStorage.setItem('caboclo_estoque', JSON.stringify(novoEstoque));
+      }
+    }
+
+    await salvarPedidoNoBanco(pedFinal);
+    if (descontarEstoque) {
+      await salvarEstoqueNoBanco(novoEstoque);
+    }
   };
 
   // Excluir Pedido
@@ -1341,14 +1413,6 @@ export default function CabocloAgroCRM() {
             preco_unitario: prod.preco_unitario,
             subtotal: sub,
           });
-
-          // Dar baixa automática no Estoque apenas se for novo pedido!
-          if (!editingPedidoId) {
-            novoEstoque[prodIndex] = {
-              ...prod,
-              quantidade_disponivel: Math.max(0, prod.quantidade_disponivel - qtdNum),
-            };
-          }
         }
       }
 
@@ -1357,9 +1421,24 @@ export default function CabocloAgroCRM() {
       dPrevisao.setDate(dPrevisao.getDate() + dias);
       const dataPrevisaoStr = dPrevisao.toISOString().split('T')[0];
 
+      const qtdParcelasNum = novoPedidoForm.qtdParcelas ? parseInt(novoPedidoForm.qtdParcelas) || null : null;
+      const valorAdiantamentoNum = novoPedidoForm.valorAdiantamento
+        ? parseFloat(novoPedidoForm.valorAdiantamento) || 0
+        : null;
+      const dataVencimentoFinal = novoPedidoForm.dataVencimentoPagamento.trim() || null;
+      const diaPagamentoFinal = novoPedidoForm.diaPagamentoParcelas.trim() || null;
+
       if (editingPedidoId) {
         const idPedNorm = normalizarId(editingPedidoId);
         const pedExistente = pedidos.find((p) => p.id === editingPedidoId || p.id === idPedNorm);
+        const freteRepassado =
+          pedExistente?.tem_frete !== false && pedExistente?.tipo_frete_cobranca !== 'custo_interno'
+            ? Number(pedExistente?.valor_frete || 0)
+            : 0;
+        const extrasRepassados = (pedExistente?.custos_extras || [])
+          .filter((e) => e.tipo === 'repassar_cliente')
+          .reduce((a, b) => a + (Number(b.valor) || 0), 0);
+
         const updatedPed: Pedido = {
           ...pedExistente,
           id: idPedNorm,
@@ -1370,9 +1449,14 @@ export default function CabocloAgroCRM() {
           quantidade: descricoesItens.join(', '),
           quantidade_toneladas_num: totalToneladasNum,
           itens_venda: itensVendaResultado,
-          valor_total: valorTotalCalculado,
+          valor_base_produtos: valorTotalCalculado,
+          valor_total: valorTotalCalculado + freteRepassado + extrasRepassados,
           data_compra: novoPedidoForm.dataCompra || hojeStr,
           data_previsao_fim_estoque: dataPrevisaoStr,
+          data_vencimento_pagamento: dataVencimentoFinal,
+          qtd_parcelas: qtdParcelasNum,
+          valor_adiantamento: valorAdiantamentoNum,
+          dia_pagamento_parcelas: diaPagamentoFinal,
           status_financeiro: novoPedidoForm.statusFinanceiro,
           tipo_operacao: pedExistente?.tipo_operacao || 'venda',
           observacao: novoPedidoForm.observacao || null,
@@ -1387,7 +1471,7 @@ export default function CabocloAgroCRM() {
 
         setEditingPedidoId(null);
         setIsNovoPedidoModalOpen(false);
-        setStatus('✅ Pedido atualizado com sucesso!');
+        setStatus('✅ Pré-Pedido atualizado com sucesso!');
 
         await salvarPedidoNoBanco(updatedPed);
         setTimeout(() => setStatus('Pronto para gravar'), 2000);
@@ -1403,9 +1487,19 @@ export default function CabocloAgroCRM() {
         quantidade: descricoesItens.join(', '),
         quantidade_toneladas_num: totalToneladasNum,
         itens_venda: itensVendaResultado,
+        valor_base_produtos: valorTotalCalculado,
         valor_total: valorTotalCalculado,
         data_compra: novoPedidoForm.dataCompra || hojeStr,
         data_previsao_fim_estoque: dataPrevisaoStr,
+        data_vencimento_pagamento: dataVencimentoFinal,
+        qtd_parcelas: qtdParcelasNum,
+        valor_adiantamento: valorAdiantamentoNum,
+        dia_pagamento_parcelas: diaPagamentoFinal,
+        etapa_pedido: 'pre_pedido',
+        tem_frete: true,
+        valor_frete: null,
+        tipo_frete_cobranca: 'repassar_cliente',
+        estoque_baixado: false,
         status_financeiro: novoPedidoForm.statusFinanceiro,
         tipo_operacao: 'venda',
         observacao: novoPedidoForm.observacao || null,
@@ -1414,18 +1508,15 @@ export default function CabocloAgroCRM() {
 
       const novaListaPed = [novoPed, ...pedidos];
       setPedidos(novaListaPed);
-      setEstoque(novoEstoque);
 
       if (typeof window !== 'undefined') {
         localStorage.setItem('caboclo_pedidos', JSON.stringify(novaListaPed));
-        localStorage.setItem('caboclo_estoque', JSON.stringify(novoEstoque));
       }
 
       setIsNovoPedidoModalOpen(false);
-      setStatus('✅ Pedido criado e estoque atualizado!');
+      setStatus('✅ Pré-Pedido criado! Agora confira o frete e confirme com o cliente.');
 
       await salvarPedidoNoBanco(novoPed);
-      await salvarEstoqueNoBanco(novoEstoque);
       setTimeout(() => setStatus('Pronto para gravar'), 2000);
     } finally {
       salvandoRef.current = false;
@@ -1596,7 +1687,7 @@ export default function CabocloAgroCRM() {
   const marcarComoRespondido = (
     id: string | undefined,
     nome: string,
-    tipo: 'estoque' | 'prospect',
+    tipo: 'estoque' | 'prospect' | 'pagamento',
     detalhe: string
   ) => {
     if (!id) return;
@@ -1642,9 +1733,17 @@ export default function CabocloAgroCRM() {
   const abrirWhatsAppComMensagem = (
     nome: string,
     telefone?: string | null,
-    tipoMensagem?: 'reordenar' | 'prospeccao' | 'frete_terceiro' | 'geral',
-    detalhesPedido?: { data_compra?: string; produto?: string; quantidade?: string; endereco_fazenda?: string },
-    lembreteInfo?: { id: string; tipo: 'estoque' | 'prospect'; detalhe: string }
+    tipoMensagem?: 'reordenar' | 'prospeccao' | 'frete_terceiro' | 'cobranca_pagamento' | 'geral',
+    detalhesPedido?: {
+      data_compra?: string;
+      produto?: string;
+      quantidade?: string;
+      endereco_fazenda?: string;
+      valor_restante?: string;
+      data_vencimento?: string;
+      info_parcelas?: string;
+    },
+    lembreteInfo?: { id: string; tipo: 'estoque' | 'prospect' | 'pagamento'; detalhe: string }
   ) => {
     let msg = '';
     const dataCompraFormatada = detalhesPedido?.data_compra || 'recente';
@@ -1658,6 +1757,11 @@ export default function CabocloAgroCRM() {
       msg = `Olá ${nome}, tudo bem? Vi que conversamos recentemente sobre a ${prod}. Gostaria de tirar dúvidas ou fechar o seu pedido de silagem hoje?`;
     } else if (tipoMensagem === 'frete_terceiro') {
       msg = `Olá parceiro ${nome}! Temos um frete de entrega de ${qtd} de ${prod} para levar em: ${end}. Seu caminhão tem disponibilidade para realizar essa entrega?`;
+    } else if (tipoMensagem === 'cobranca_pagamento') {
+      const valStr = detalhesPedido?.valor_restante ? ` no valor de R$ ${detalhesPedido.valor_restante}` : '';
+      const vencStr = detalhesPedido?.data_vencimento ? ` (vencimento: ${detalhesPedido.data_vencimento})` : '';
+      const parcStr = detalhesPedido?.info_parcelas ? ` — ${detalhesPedido.info_parcelas}` : '';
+      msg = `Olá ${nome}, tudo bem? Passando da Caboclo Silagem para lembrar sobre o pagamento referente ao pedido de ${prod}${valStr}${vencStr}${parcStr}. Qualquer dúvida estamos à disposição!`;
     } else {
       msg = `Olá ${nome}, tudo bem? Entro em contato da Caboclo Silagem sobre o seu atendimento. Como podemos te ajudar hoje?`;
     }
@@ -1720,6 +1824,19 @@ export default function CabocloAgroCRM() {
   const lembretesProspectsSemana = contatos.filter(
     (c) => c.status_crm === 'possibilidade' && isLembreteAtivo(c.id)
   );
+  const lembretesPagamentoSemana = pedidos.filter(
+    (p) =>
+      p.status_financeiro !== 'pago' &&
+      isLembreteAtivo(`pag-${p.id}`) &&
+      Boolean(
+        p.data_vencimento_pagamento ||
+          p.qtd_parcelas ||
+          p.valor_adiantamento ||
+          p.dia_pagamento_parcelas ||
+          p.status_financeiro === 'atrasado' ||
+          p.status_financeiro === 'pendente'
+      )
+  );
 
   const contatosFiltrados = contatos.filter((c) => {
     if (filtroContato === 'todos') return true;
@@ -1729,7 +1846,7 @@ export default function CabocloAgroCRM() {
 
   const totalVendas = pedidos
     .filter((p) => p.tipo_operacao === 'venda')
-    .reduce((acc, curr) => acc + (curr.valor_total || 0), 0);
+    .reduce((acc, curr) => acc + calcularTotaisPedido(curr).totalCobradoCliente, 0);
 
   const totalCompras = pedidos
     .filter((p) => p.tipo_operacao === 'compra')
@@ -1761,8 +1878,30 @@ export default function CabocloAgroCRM() {
     return true;
   });
 
-  const totalVendasPeriodo = pedidosVendaPeriodo.reduce((acc, p) => acc + (p.valor_total || 0), 0);
-  const totalToneladasPeriodo = pedidosVendaPeriodo.reduce((acc, p) => acc + (p.quantidade_toneladas_num || 0), 0);
+  const totalVendasPeriodo = pedidosVendaPeriodo.reduce(
+    (acc, p) => acc + calcularTotaisPedido(p).totalCobradoCliente,
+    0
+  );
+  const totalCustosInternosPeriodo = pedidosVendaPeriodo.reduce(
+    (acc, p) => acc + calcularTotaisPedido(p).totalCustosInternos,
+    0
+  );
+  const totalExtrasRepassadosPeriodo = pedidosVendaPeriodo.reduce(
+    (acc, p) => acc + calcularTotaisPedido(p).extrasCliente + calcularTotaisPedido(p).freteCliente,
+    0
+  );
+  const totalLucroLiquidoPeriodo = pedidosVendaPeriodo.reduce(
+    (acc, p) => acc + calcularTotaisPedido(p).lucroLiquidoPedido,
+    0
+  );
+  const totalToneladasPeriodo = pedidosVendaPeriodo.reduce(
+    (acc, p) => acc + calcularTotaisPedido(p).toneladasFinal,
+    0
+  );
+  const totalSacosPeriodo = pedidosVendaPeriodo.reduce(
+    (acc, p) => acc + calcularTotaisPedido(p).sacosFinal,
+    0
+  );
   const ticketMedioPeriodo = pedidosVendaPeriodo.length > 0 ? totalVendasPeriodo / pedidosVendaPeriodo.length : 0;
 
   // Agrupamento de Vendas por Cliente
@@ -1781,6 +1920,7 @@ export default function CabocloAgroCRM() {
 
     pedidos.forEach((p) => {
       if (p.tipo_operacao !== 'venda') return;
+      const totais = calcularTotaisPedido(p);
 
       const key = p.nome_cliente || 'Cliente Diversos';
       const atual = mapa.get(key) || {
@@ -1794,8 +1934,8 @@ export default function CabocloAgroCRM() {
 
       mapa.set(key, {
         nomeCliente: key,
-        totalComprado: atual.totalComprado + (p.valor_total || 0),
-        totalQtdTon: atual.totalQtdTon + (p.quantidade_toneladas_num || 0),
+        totalComprado: atual.totalComprado + totais.totalCobradoCliente,
+        totalQtdTon: atual.totalQtdTon + totais.toneladasFinal,
         qtdPedidos: atual.qtdPedidos + 1,
         ultimoPedidoData: atual.ultimoPedidoData || p.data_compra,
         ultimoProduto: atual.ultimoProduto || p.produto,
@@ -1879,7 +2019,7 @@ export default function CabocloAgroCRM() {
       {/* Conteúdo Principal conforme Aba Ativa */}
       <main className="flex-1 max-w-md w-full mx-auto px-4 pt-4 flex flex-col gap-5">
         {/* PAINEL DE LEMBRETES DA SEMANA (Na aba central "Início") */}
-        {activeTab === 'inicio' && (lembretesEstoqueSemana.length > 0 || lembretesProspectsSemana.length > 0 || lembretesRespondidos.length > 0) && (
+        {activeTab === 'inicio' && (lembretesPagamentoSemana.length > 0 || lembretesEstoqueSemana.length > 0 || lembretesProspectsSemana.length > 0 || lembretesRespondidos.length > 0) && (
           <div className="bg-gradient-to-r from-amber-950/60 to-slate-900 border border-amber-500/40 rounded-2xl p-4 space-y-3 shadow-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
@@ -1897,7 +2037,7 @@ export default function CabocloAgroCRM() {
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  Pendentes ({lembretesEstoqueSemana.length + lembretesProspectsSemana.length})
+                  Pendentes ({lembretesPagamentoSemana.length + lembretesEstoqueSemana.length + lembretesProspectsSemana.length})
                 </button>
                 <button
                   onClick={() => setAbaLembretes('respondidos')}
@@ -1914,11 +2054,133 @@ export default function CabocloAgroCRM() {
 
             {abaLembretes === 'pendentes' ? (
               <div className="space-y-2">
-                {lembretesEstoqueSemana.length === 0 && lembretesProspectsSemana.length === 0 && (
+                {lembretesPagamentoSemana.length === 0 && lembretesEstoqueSemana.length === 0 && lembretesProspectsSemana.length === 0 && (
                   <div className="text-center py-4 text-slate-400 text-xs italic">
                     🎉 Nenhum lembrete pendente para esta semana!
                   </div>
                 )}
+
+                {/* LEMBRETES DE PAGAMENTO (EM ABERTO OU ATRASADO, PARCELAS E ADIANTAMENTO) */}
+                {lembretesPagamentoSemana.map((p) => {
+                  const c = contatos.find((cnt) => cnt.nome === p.nome_cliente || cnt.id === p.contato_id);
+                  const isAtrasado =
+                    p.status_financeiro === 'atrasado' ||
+                    Boolean(p.data_vencimento_pagamento && p.data_vencimento_pagamento < hojeStr);
+                  const valorTotal = p.valor_total || 0;
+                  const adiantamento = p.valor_adiantamento || 0;
+                  const saldoRestante = Math.max(0, valorTotal - adiantamento);
+                  const qtdParc = p.qtd_parcelas && p.qtd_parcelas > 1 ? p.qtd_parcelas : null;
+                  const valorParcela = qtdParc ? saldoRestante / qtdParc : saldoRestante;
+                  const idLembretePag = `pag-${p.id}`;
+
+                  return (
+                    <div
+                      key={idLembretePag}
+                      className={`bg-slate-950/90 border rounded-xl p-3 space-y-2 ${
+                        isAtrasado ? 'border-red-600/80 ring-1 ring-red-500/30' : 'border-amber-700/70'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-xs text-white">{p.nome_cliente}</span>
+                            <span
+                              className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-extrabold border ${
+                                isAtrasado
+                                  ? 'bg-red-950 text-red-300 border-red-700 animate-pulse'
+                                  : 'bg-amber-950 text-amber-300 border-amber-700'
+                              }`}
+                            >
+                              {isAtrasado ? '🚨 Pagamento Atrasado' : '💰 Pagamento em Aberto'}
+                            </span>
+                          </div>
+
+                          <span className="text-[11px] text-emerald-300 block font-bold font-mono">
+                            Falta Receber: R$ {saldoRestante.toFixed(2)}
+                            {adiantamento > 0 && (
+                              <span className="text-slate-400 font-normal">
+                                {' '}
+                                (Total R$ {valorTotal.toFixed(2)} • Adiantou R$ {adiantamento.toFixed(2)})
+                              </span>
+                            )}
+                          </span>
+
+                          <div className="text-[10px] text-slate-300 flex flex-wrap gap-x-2 gap-y-0.5">
+                            {p.data_vencimento_pagamento && (
+                              <span className={isAtrasado ? 'text-red-300 font-bold' : 'text-amber-300 font-semibold'}>
+                                📅 Data Pagto: {p.data_vencimento_pagamento}
+                              </span>
+                            )}
+                            {qtdParc && (
+                              <span className="text-sky-300 font-semibold">
+                                💳 {qtdParc}x de R$ {valorParcela.toFixed(2)}
+                              </span>
+                            )}
+                            {p.dia_pagamento_parcelas && (
+                              <span className="text-slate-300">
+                                🗓️ Combinado: {p.dia_pagamento_parcelas}
+                              </span>
+                            )}
+                          </div>
+
+                          <span className="text-[10px] text-slate-400 block">
+                            Pedido: {p.produto} ({p.quantidade})
+                          </span>
+                        </div>
+
+                        <button
+                          onClick={() => excluirLembrete(idLembretePag)}
+                          className="text-slate-500 hover:text-red-400 p-1 transition-colors"
+                          title="Ocultar lembrete de pagamento"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-900 flex-wrap">
+                        <button
+                          onClick={() => p.id && alternarStatusFinanceiro(p.id)}
+                          className="bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/60 px-2 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
+                          title="Marcar pagamento como quitado/pago"
+                        >
+                          <Check className="w-3 h-3 text-emerald-400" /> Dar Baixa
+                        </button>
+
+                        <button
+                          onClick={() => setAdiarModal({ id: idLembretePag, nome: `Pagamento de ${p.nome_cliente}` })}
+                          className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                          title="Adiar lembrete por alguns dias"
+                        >
+                          <Clock className="w-3 h-3 text-amber-400" /> Adiar
+                        </button>
+
+                        <button
+                          onClick={() =>
+                            abrirWhatsAppComMensagem(
+                              p.nome_cliente,
+                              c?.telefone,
+                              'cobranca_pagamento',
+                              {
+                                produto: p.produto || 'Silagem',
+                                valor_restante: saldoRestante.toFixed(2),
+                                data_vencimento: p.data_vencimento_pagamento || p.dia_pagamento_parcelas || undefined,
+                                info_parcelas: qtdParc ? `${qtdParc}x de R$ ${valorParcela.toFixed(2)}` : undefined,
+                              },
+                              {
+                                id: idLembretePag,
+                                tipo: 'pagamento',
+                                detalhe: `Cobrança R$ ${saldoRestante.toFixed(2)} (${p.produto || 'Silagem'})`,
+                              }
+                            )
+                          }
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 shadow transition-colors"
+                        >
+                          <img src="/whatsapp.png" alt="WhatsApp" className="w-4 h-4 object-contain shrink-0" /> Whats
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
 
                 {lembretesEstoqueSemana.map((p) => {
                   const c = contatos.find((cnt) => cnt.nome === p.nome_cliente);
@@ -2723,141 +2985,45 @@ export default function CabocloAgroCRM() {
           </div>
         )}
 
-        {/* ABA PEDIDOS DE VENDA */}
+        {/* ABA PEDIDOS DE VENDA & PÁTIO DE FUNCIONÁRIOS */}
         {activeTab === 'pedidos' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-2 px-1">
-              <div>
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                  <ShoppingBag className="w-4 h-4 text-emerald-400" /> Pedidos de Venda ({pedidos.length})
-                </h2>
-                <p className="text-[11px] text-slate-500">
-                  Controle de pedidos, entregas e alocação de freteiros
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setEditingPedidoId(null);
-                  setErrosPedido({});
-                  setAvisoValidacaoPedido(null);
-                  setNovoPedidoForm({
-                    clienteId: '',
-                    terceiroId: '',
-                    itens: [{ estoqueId: estoque[0]?.id || 'est-1', quantidade: '10' }],
-                    dataCompra: hojeStr,
-                    diasEstoqueFim: '30',
-                    statusFinanceiro: 'pendente',
-                    observacao: '',
-                  });
-                  setIsNovoPedidoModalOpen(true);
-                }}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" /> Novo Pedido
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {pedidos.map((pedido) => {
-                const clienteObj = contatos.find((c) => c.nome === pedido.nome_cliente || c.id === pedido.contato_id);
-                const qtdTon = pedido.quantidade_toneladas_num || 10;
-
-                return (
-                  <div key={pedido.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-white text-sm">{pedido.nome_cliente}</span>
-                        <button
-                          onClick={() => abrirEdicaoPedido(pedido)}
-                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
-                          title="Editar pedido"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => pedido.id && excluirPedido(pedido.id)}
-                          className="p-1 rounded bg-slate-800 hover:bg-red-950 text-red-400 transition-colors"
-                          title="Excluir pedido"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      <span className="text-[11px] text-slate-400 font-mono">Data: {pedido.data_compra}</span>
-                    </div>
-
-                    <div className="space-y-1.5 bg-slate-950 p-3 rounded-xl border border-slate-850">
-                      <div className="flex items-center justify-between text-xs text-slate-200">
-                        <span className="font-semibold text-emerald-400">🌾 {pedido.produto}</span>
-                        <span className="font-bold text-emerald-300 text-sm">
-                          {pedido.valor_total ? `R$ ${pedido.valor_total.toFixed(2)}` : 'R$ -'}
-                        </span>
-                      </div>
-
-                      {pedido.quantidade && (
-                        <span className="text-[11px] text-slate-400 block">Qtd: {pedido.quantidade}</span>
-                      )}
-                    </div>
-
-                    {clienteObj?.endereco_fazenda && (
-                      <div className="text-[11px] text-emerald-300 flex items-center gap-1">
-                        <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span>{clienteObj.endereco_fazenda}</span>
-                      </div>
-                    )}
-
-                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2">
-                      <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1">
-                        <Truck className="w-3.5 h-3.5" /> Terceiros Disponíveis p/ Carga de {qtdTon}t:
-                      </span>
-
-                      <div className="space-y-1.5">
-                        {terceirosTransportadores.map((t) => {
-                          const cap = t.capacidade_carga_toneladas || 10;
-                          const viagens = cap >= qtdTon ? 1 : Math.ceil(qtdTon / cap);
-                          const podeLevarDireto = cap >= qtdTon;
-
-                          return (
-                            <div
-                              key={t.id}
-                              className="flex items-center justify-between text-xs p-2 bg-slate-900 rounded-lg border border-slate-850"
-                            >
-                              <div>
-                                <span className="font-bold text-white block">{t.nome}</span>
-                                <span className="text-[10px] text-slate-400">
-                                  {t.tipo_veiculo} ({cap}t) •{' '}
-                                  <strong className={podeLevarDireto ? 'text-emerald-400' : 'text-amber-400'}>
-                                    {podeLevarDireto ? '1 viagem' : `${viagens} viagens`}
-                                  </strong>
-                                </span>
-                              </div>
-
-                              <button
-                                onClick={() =>
-                                  abrirWhatsAppComMensagem(
-                                    t.nome,
-                                    t.telefone,
-                                    'frete_terceiro',
-                                    {
-                                      produto: pedido.produto || 'Silagem',
-                                      quantidade: pedido.quantidade || '10t',
-                                      endereco_fazenda: clienteObj?.endereco_fazenda || pedido.nome_cliente,
-                                    }
-                                  )
-                                }
-                                className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1"
-                              >
-                                <img src="/whatsapp.png" alt="WhatsApp" className="w-3.5 h-3.5 object-contain shrink-0" /> Chamar
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <FluxoPedidosCarregamento
+            pedidos={pedidos}
+            contatos={contatos}
+            estoque={estoque}
+            hojeStr={hojeStr}
+            onNovoPedido={() => {
+              setEditingPedidoId(null);
+              setErrosPedido({});
+              setAvisoValidacaoPedido(null);
+              setNovoPedidoForm({
+                clienteId: '',
+                terceiroId: '',
+                itens: [{ estoqueId: estoque[0]?.id || 'est-1', quantidade: '10' }],
+                dataCompra: hojeStr,
+                diasEstoqueFim: '30',
+                statusFinanceiro: 'pendente',
+                dataVencimentoPagamento: '',
+                qtdParcelas: '',
+                valorAdiantamento: '',
+                diaPagamentoParcelas: '',
+                observacao: '',
+              });
+              setIsNovoPedidoModalOpen(true);
+            }}
+            onEditarPedido={abrirEdicaoPedido}
+            onExcluirPedido={excluirPedido}
+            onAtualizarPedido={atualizarPedidoDoFluxo}
+            onAlternarStatusFinanceiro={alternarStatusFinanceiro}
+            onDispararWhatsApp={(telefone, nomeCliente, mensagem) =>
+              setWhatsappModal({
+                isOpen: true,
+                telefone: telefone || '',
+                nomeCliente,
+                mensagem,
+              })
+            }
+          />
         )}
 
         {/* ABA ESTOQUE */}
@@ -3040,40 +3206,89 @@ export default function CabocloAgroCRM() {
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="bg-slate-900 border border-emerald-500/40 p-3.5 rounded-2xl space-y-1">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
-                      <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Faturamento Total
+                      <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> Faturamento (Cliente)
                     </span>
-                    <span className="text-base font-extrabold text-emerald-400">
+                    <span className="text-base font-extrabold text-emerald-400 block">
                       R$ {totalVendasPeriodo.toFixed(2)}
+                    </span>
+                    {totalExtrasRepassadosPeriodo > 0 && (
+                      <span className="text-[10px] text-sky-300 block">
+                        Inclui R$ {totalExtrasRepassadosPeriodo.toFixed(2)} repassados (frete/chapa)
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="bg-slate-900 border border-teal-500/40 p-3.5 rounded-2xl space-y-1">
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-teal-400" /> Lucro Líquido (Op.)
+                    </span>
+                    <span className="text-base font-extrabold text-teal-400 block">
+                      R$ {totalLucroLiquidoPeriodo.toFixed(2)}
+                    </span>
+                    <span className="text-[10px] text-rose-300 block">
+                      Custos Internos: -R$ {totalCustosInternosPeriodo.toFixed(2)}
                     </span>
                   </div>
 
                   <div className="bg-slate-900 border border-sky-500/40 p-3.5 rounded-2xl space-y-1">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
-                      <Package className="w-3.5 h-3.5 text-sky-400" /> Volume Vendido
+                      <Package className="w-3.5 h-3.5 text-sky-400" /> Volume Carregado
                     </span>
-                    <span className="text-base font-extrabold text-sky-400">
-                      {totalToneladasPeriodo.toFixed(1)} toneladas
+                    <span className="text-base font-extrabold text-sky-400 block">
+                      {totalToneladasPeriodo.toFixed(1)} ton
                     </span>
-                  </div>
-
-                  <div className="bg-slate-900 border border-purple-500/40 p-3.5 rounded-2xl space-y-1">
-                    <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
-                      <ShoppingBag className="w-3.5 h-3.5 text-purple-400" /> Total Pedidos
-                    </span>
-                    <span className="text-base font-extrabold text-purple-400">
-                      {pedidosVendaPeriodo.length} vendas
-                    </span>
+                    {totalSacosPeriodo > 0 && (
+                      <span className="text-[10px] text-emerald-300 block font-semibold">
+                        🛍️ {totalSacosPeriodo} sacos carregados
+                      </span>
+                    )}
                   </div>
 
                   <div className="bg-slate-900 border border-amber-500/40 p-3.5 rounded-2xl space-y-1">
                     <span className="text-[10px] text-slate-400 uppercase font-semibold flex items-center gap-1">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Ticket Médio
+                      <ShoppingBag className="w-3.5 h-3.5 text-amber-400" /> {pedidosVendaPeriodo.length} Pedidos • Ticket
                     </span>
-                    <span className="text-base font-extrabold text-amber-400">
+                    <span className="text-base font-extrabold text-amber-400 block">
                       R$ {ticketMedioPeriodo.toFixed(2)}
+                    </span>
+                    <span className="text-[10px] text-slate-400 block">
+                      Média por pedido no período
                     </span>
                   </div>
                 </div>
+
+                {/* Resumo de Custos Extras (Chapas / Fretes) para Relatório */}
+                {(totalCustosInternosPeriodo > 0 || totalExtrasRepassadosPeriodo > 0) && (
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 space-y-2 text-xs">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-300 block">
+                      📊 Relatório de Fretes, Chapas e Custos Extras na Carga
+                    </span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-sky-950/30 border border-sky-800/50 rounded-xl p-2.5">
+                        <span className="text-[10px] text-sky-300 font-bold uppercase block">
+                          Repassado ao Cliente
+                        </span>
+                        <span className="text-sm font-extrabold text-sky-400 font-mono">
+                          + R$ {totalExtrasRepassadosPeriodo.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-slate-400 block">
+                          Somado na nota do cliente
+                        </span>
+                      </div>
+                      <div className="bg-rose-950/30 border border-rose-800/50 rounded-xl p-2.5">
+                        <span className="text-[10px] text-rose-300 font-bold uppercase block">
+                          Custo Interno Fazenda
+                        </span>
+                        <span className="text-sm font-extrabold text-rose-400 font-mono">
+                          - R$ {totalCustosInternosPeriodo.toFixed(2)}
+                        </span>
+                        <span className="text-[10px] text-slate-400 block">
+                          Chapas/fretes absorvidos
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Vendas do Período Listagem */}
                 <div className="space-y-2">
@@ -3085,28 +3300,71 @@ export default function CabocloAgroCRM() {
                       Nenhuma venda registrada para este período.
                     </div>
                   ) : (
-                    pedidosVendaPeriodo.map((p) => (
-                      <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center justify-between text-xs shadow-sm">
-                        <div>
-                          <span className="font-bold text-white block">{p.nome_cliente}</span>
-                          <span className="text-[11px] text-slate-400">
-                            {p.produto} ({p.quantidade || `${p.quantidade_toneladas_num || 1}t`}) • {p.data_compra}
-                          </span>
+                    pedidosVendaPeriodo.map((p) => {
+                      const totais = calcularTotaisPedido(p);
+                      return (
+                        <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-2 text-xs shadow-sm">
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-white">{p.nome_cliente}</span>
+                                {p.etapa_pedido && (
+                                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                    {p.etapa_pedido === 'pre_pedido'
+                                      ? '1. Pré-Pedido'
+                                      : p.etapa_pedido === 'aguardando_cliente'
+                                      ? '2. Aguard. Cliente'
+                                      : p.etapa_pedido === 'agendado'
+                                      ? '3. Agendado'
+                                      : '4. Carregado'}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-[11px] text-slate-400 block mt-0.5">
+                                {p.produto} ({totais.toneladasFinal}t{totais.sacosFinal > 0 ? ` • ${totais.sacosFinal} sacos` : ''}) • {p.data_compra}
+                              </span>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="font-extrabold text-emerald-400 block font-mono">
+                                R$ {totais.totalCobradoCliente.toFixed(2)}
+                              </span>
+                              <span className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded border ${
+                                p.status_financeiro === 'pago'
+                                  ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
+                                  : 'bg-amber-950 text-amber-300 border-amber-800'
+                              }`}>
+                                {p.status_financeiro === 'pago' ? 'PAGO' : 'PENDENTE'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {(totais.totalCustosInternos > 0 || totais.extrasCliente > 0 || totais.freteCliente > 0) && (
+                            <div className="pt-1.5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-1.5 text-[10px]">
+                              <div className="flex flex-wrap gap-1.5">
+                                {totais.freteCliente > 0 && (
+                                  <span className="px-1.5 py-0.5 rounded bg-sky-950/60 text-sky-300 border border-sky-800/60">
+                                    🚚 Frete Cliente: R$ {totais.freteCliente.toFixed(2)}
+                                  </span>
+                                )}
+                                {totais.extrasCliente > 0 && (
+                                  <span className="px-1.5 py-0.5 rounded bg-sky-950/60 text-sky-300 border border-sky-800/60">
+                                    ➕ Extras Repassados: R$ {totais.extrasCliente.toFixed(2)}
+                                  </span>
+                                )}
+                                {totais.totalCustosInternos > 0 && (
+                                  <span className="px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-800/60">
+                                    🏢 Custo Interno (Chapa/Frete): -R$ {totais.totalCustosInternos.toFixed(2)}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="font-mono font-bold text-teal-300">
+                                Líquido: R$ {totais.lucroLiquidoPedido.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
                         </div>
-                        <div className="text-right">
-                          <span className="font-extrabold text-emerald-400 block">
-                            R$ {p.valor_total ? p.valor_total.toFixed(2) : '0.00'}
-                          </span>
-                          <span className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded border ${
-                            p.status_financeiro === 'pago'
-                              ? 'bg-emerald-950 text-emerald-300 border-emerald-800'
-                              : 'bg-amber-950 text-amber-300 border-amber-800'
-                          }`}>
-                            {p.status_financeiro === 'pago' ? 'PAGO' : 'PENDENTE'}
-                          </span>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -3899,6 +4157,123 @@ export default function CabocloAgroCRM() {
                   <option value="60">Estoque dura 60 dias (2 meses)</option>
                 </select>
               </div>
+
+              {/* 5. Condições de Pagamento, Parcelas e Adiantamento (Opcional) */}
+              <div className="border-t border-slate-800 pt-2.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] text-amber-300 font-bold block">
+                    5. Pagamento, Parcelas e Adiantamento (Opcional)
+                  </label>
+                  <span className="text-[9px] text-slate-400 italic">Nenhum campo obrigatório</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">Situação do Pagamento</label>
+                    <select
+                      value={novoPedidoForm.statusFinanceiro}
+                      onChange={(e) =>
+                        setNovoPedidoForm({
+                          ...novoPedidoForm,
+                          statusFinanceiro: e.target.value as StatusFinanceiro,
+                        })
+                      }
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none text-xs"
+                    >
+                      <option value="pendente">⏳ Em Aberto</option>
+                      <option value="pago">✅ Pago Integral</option>
+                      <option value="atrasado">🚨 Atrasado</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">Data de Pagamento</label>
+                    <input
+                      type="date"
+                      value={novoPedidoForm.dataVencimentoPagamento}
+                      onChange={(e) =>
+                        setNovoPedidoForm({ ...novoPedidoForm, dataVencimentoPagamento: e.target.value })
+                      }
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">Adiantamento na Hora (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={novoPedidoForm.valorAdiantamento}
+                      onChange={(e) =>
+                        setNovoPedidoForm({ ...novoPedidoForm, valorAdiantamento: e.target.value })
+                      }
+                      placeholder="Ex: 1000.00"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">Qtd. de Parcelas</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={novoPedidoForm.qtdParcelas}
+                      onChange={(e) =>
+                        setNovoPedidoForm({ ...novoPedidoForm, qtdParcelas: e.target.value })
+                      }
+                      placeholder="Ex: 2, 3, 4..."
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none text-xs"
+                    />
+                  </div>
+
+                  <div className="col-span-2">
+                    <label className="text-[10px] text-slate-400 block mb-1">
+                      Que dia ficou de pagar? (Observação de Vencimento / Parcelas)
+                    </label>
+                    <input
+                      type="text"
+                      value={novoPedidoForm.diaPagamentoParcelas}
+                      onChange={(e) =>
+                        setNovoPedidoForm({ ...novoPedidoForm, diaPagamentoParcelas: e.target.value })
+                      }
+                      placeholder="Ex: Todo dia 15, ou 30/60 dias, ou dia 20/12"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Resumo automático do saldo restante e parcelas */}
+                {(() => {
+                  const totalItensModal = novoPedidoForm.itens.reduce((acc, it) => {
+                    const p = estoque.find((e) => e.id === it.estoqueId);
+                    return acc + (parseFloat(it.quantidade) || 0) * (p?.preco_unitario || 0);
+                  }, 0);
+                  const adiant = parseFloat(novoPedidoForm.valorAdiantamento) || 0;
+                  const restante = Math.max(0, totalItensModal - adiant);
+                  const nParc = parseInt(novoPedidoForm.qtdParcelas) || 1;
+
+                  if (adiant > 0 || nParc > 1) {
+                    return (
+                      <div className="bg-slate-950 border border-amber-500/30 rounded-xl p-2.5 text-[11px] space-y-1">
+                        <div className="flex justify-between text-slate-300">
+                          <span>Total do Pedido: R$ {totalItensModal.toFixed(2)}</span>
+                          {adiant > 0 && <span className="text-emerald-400">Adiantado: R$ {adiant.toFixed(2)}</span>}
+                        </div>
+                        <div className="flex justify-between font-bold text-amber-300">
+                          <span>Falta Pagar: R$ {restante.toFixed(2)}</span>
+                          {nParc > 1 && (
+                            <span className="text-sky-300">
+                              {nParc}x de R$ {(restante / nParc).toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
             </div>
 
             <div className="flex gap-2 pt-2 border-t border-slate-800">
@@ -4147,7 +4522,7 @@ export default function CabocloAgroCRM() {
               <Home className="w-5 h-5" />
             </div>
             <span>Início</span>
-            {(lembretesEstoqueSemana.length > 0 || lembretesProspectsSemana.length > 0) && (
+            {(lembretesPagamentoSemana.length > 0 || lembretesEstoqueSemana.length > 0 || lembretesProspectsSemana.length > 0) && (
               <span className="absolute top-0 right-4 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
             )}
           </button>
