@@ -170,6 +170,7 @@ export function FluxoPedidosCarregamento({
     valorFrete: string;
     tipoFreteCobranca: 'repassar_cliente' | 'custo_interno';
     custosExtras: CustoExtraPedido[];
+    nomeFuncionario: string;
     observacaoCarga: string;
     fotoCaminhao: string | null;
   }>({
@@ -181,6 +182,7 @@ export function FluxoPedidosCarregamento({
     valorFrete: '',
     tipoFreteCobranca: 'repassar_cliente',
     custosExtras: [],
+    nomeFuncionario: '',
     observacaoCarga: '',
     fotoCaminhao: null,
   });
@@ -197,6 +199,10 @@ export function FluxoPedidosCarregamento({
 
   const abrirModalConferenciaCarga = (p: Pedido) => {
     const totais = calcularTotaisPedido(p);
+    const ultimoFunc =
+      typeof window !== 'undefined'
+        ? localStorage.getItem('caboclo_nome_funcionario_patio') || ''
+        : '';
     setModalCargaPedido(p);
     setCargaForm({
       toneladasReal: String(p.toneladas_real ?? p.quantidade_toneladas_num ?? 10),
@@ -207,6 +213,7 @@ export function FluxoPedidosCarregamento({
       valorFrete: p.valor_frete != null ? String(p.valor_frete) : '',
       tipoFreteCobranca: p.tipo_frete_cobranca || 'repassar_cliente',
       custosExtras: p.custos_extras ? [...p.custos_extras] : [],
+      nomeFuncionario: p.nome_funcionario || ultimoFunc,
       observacaoCarga: p.observacao || '',
       fotoCaminhao: p.foto_caminhao_carregado || null,
     });
@@ -298,9 +305,20 @@ export function FluxoPedidosCarregamento({
       ' às ' +
       new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
+    if (typeof window !== 'undefined' && cargaForm.nomeFuncionario.trim()) {
+      localStorage.setItem('caboclo_nome_funcionario_patio', cargaForm.nomeFuncionario.trim());
+    }
+
+    const funcCad = funcionarios.find(
+      (f) => f.nome.trim().toLowerCase() === cargaForm.nomeFuncionario.trim().toLowerCase()
+    );
+
     const pedidoFinalizado: Pedido = {
       ...modalCargaPedido,
       etapa_pedido: 'carregado',
+      nome_funcionario:
+        cargaForm.nomeFuncionario.trim() || modalCargaPedido.nome_funcionario || null,
+      funcionario_id: funcCad?.id || modalCargaPedido.funcionario_id || null,
       toneladas_real: tonRealNum,
       sacos_real: sacosRealNum,
       quantidade_toneladas_num: tonRealNum > 0 ? tonRealNum : modalCargaPedido.quantidade_toneladas_num,
@@ -312,7 +330,7 @@ export function FluxoPedidosCarregamento({
       tipo_frete_cobranca: cargaForm.tipoFreteCobranca,
       custos_extras: cargaForm.custosExtras,
       valor_total: valorTotalFinalCliente,
-      observacao: cargaForm.observacaoCarga || null,
+      observacao: cargaForm.observacaoCarga.trim() || null,
       foto_caminhao_carregado:
         cargaForm.fotoCaminhao ?? modalCargaPedido.foto_caminhao_carregado ?? null,
       data_confirmacao_carga:
@@ -685,18 +703,22 @@ export function FluxoPedidosCarregamento({
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between text-[11px] text-slate-300">
-                      <span>
-                        {etapa === 'carregado' ? '⚖️ Carga Final:' : '📦 Qtd. Estimada:'}{' '}
-                        <strong>
-                          {pedido.toneladas_real != null
-                            ? `${pedido.toneladas_real} toneladas`
-                            : pedido.quantidade || `${qtdTon}t`}
-                        </strong>
-                        {pedido.sacos_real != null && pedido.sacos_real > 0
-                          ? ` (${pedido.sacos_real} sacos)`
-                          : ''}
-                      </span>
+                    <div className="flex items-center justify-between text-[11px] text-slate-300 flex-wrap gap-1">
+                      {etapa === 'carregado' ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 px-2 py-0.5 rounded-lg font-bold">
+                            ⚖️ Toneladas Final: <strong>{pedido.toneladas_real ?? qtdTon} t</strong>
+                          </span>
+                          <span className="bg-sky-950/80 border border-sky-700/60 text-sky-300 px-2 py-0.5 rounded-lg font-bold">
+                            🛍️ Qtd. de Sacos: <strong>{pedido.sacos_real ?? 0} sacos</strong>
+                          </span>
+                        </div>
+                      ) : (
+                        <span>
+                          📦 Qtd. Estimada:{' '}
+                          <strong>{pedido.quantidade || `${qtdTon} toneladas`}</strong>
+                        </span>
+                      )}
                       <span className="text-slate-400 font-mono">
                         Silagem: R$ {totais.valorBase.toFixed(2)}
                       </span>
@@ -765,6 +787,13 @@ export function FluxoPedidosCarregamento({
                         {pedido.dia_pagamento_parcelas && (
                           <span>🗓️ Combinado: {pedido.dia_pagamento_parcelas}</span>
                         )}
+                      </div>
+                    )}
+
+                    {/* Observação do Pedido */}
+                    {pedido.observacao && (
+                      <div className="pt-1.5 mt-1 border-t border-slate-800/80 text-[11px] text-slate-300 italic">
+                        📝 Obs: &quot;{pedido.observacao}&quot;
                       </div>
                     )}
                   </div>
@@ -1174,11 +1203,10 @@ export function FluxoPedidosCarregamento({
                   {/* =============================================================== */}
                   {etapa === 'carregado' && (
                     <div className="bg-emerald-950/25 border border-emerald-700/40 rounded-xl p-3 space-y-3 text-xs">
-                      <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
                         <div className="text-[11px] text-emerald-200">
-                          <span className="font-bold block">
-                            ✅ Carga Finalizada ({pedido.toneladas_real ?? qtdTon}t
-                            {pedido.sacos_real ? ` • ${pedido.sacos_real} sacos` : ''})
+                          <span className="font-extrabold text-emerald-300 uppercase block">
+                            ✅ Pedido Final — Carga Finalizada
                           </span>
                           {totais.custoInternoTotal > 0 && (
                             <span className="text-[10px] text-slate-400">
@@ -1194,7 +1222,7 @@ export function FluxoPedidosCarregamento({
                             onClick={() => abrirModalConferenciaCarga(pedido)}
                             className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1"
                           >
-                            <Camera className="w-3 h-3 text-amber-400" /> Carga / Foto
+                            <Camera className="w-3 h-3 text-amber-400" /> Ajustar Carga / Foto
                           </button>
 
                           <button
@@ -1211,11 +1239,11 @@ export function FluxoPedidosCarregamento({
                                   pedido.nome_cliente
                                 }! Seu caminhão foi carregado:\n• Produto: ${
                                   pedido.produto
-                                }\n• Quantidade Final Carregada: *${
+                                }\n• Toneladas Final: *${
                                   pedido.toneladas_real ?? qtdTon
-                                } toneladas*${
-                                  pedido.sacos_real ? ` (*${pedido.sacos_real} sacos*)` : ''
-                                }\n• Valor da Silagem: R$ ${totais.valorBase.toFixed(2)}${
+                                } toneladas*\n• Quantidade de Sacos: *${
+                                  pedido.sacos_real ?? 0
+                                } sacos*\n• Valor da Silagem: R$ ${totais.valorBase.toFixed(2)}${
                                   totais.freteRepassado > 0
                                     ? `\n• Frete: R$ ${totais.freteRepassado.toFixed(2)}`
                                     : ''
@@ -1230,6 +1258,79 @@ export function FluxoPedidosCarregamento({
                           </button>
                         </div>
                       </div>
+
+                      {/* QUADRO EM DESTAQUE NO PEDIDO FINAL: TONELADAS FINAL E QUANTIDADE DE SACOS */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-slate-950/90 border border-emerald-500/40 rounded-xl p-2.5">
+                          <span className="text-[10px] text-emerald-300 font-bold uppercase block">
+                            ⚖️ Toneladas Final
+                          </span>
+                          <div className="flex items-baseline justify-between gap-1 mt-1">
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={pedido.toneladas_real ?? qtdTon}
+                              onChange={(e) => {
+                                const novaTon = parseFloat(e.target.value) || 0;
+                                const sacosAtuais = pedido.sacos_real ?? 0;
+                                onAtualizarPedido({
+                                  ...pedido,
+                                  toneladas_real: novaTon,
+                                  quantidade_toneladas_num: novaTon,
+                                  quantidade:
+                                    sacosAtuais > 0
+                                      ? `${novaTon} toneladas (${sacosAtuais} sacos)`
+                                      : `${novaTon} toneladas`,
+                                });
+                              }}
+                              className="w-20 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm font-extrabold text-emerald-400 font-mono outline-none focus:border-emerald-400"
+                            />
+                            <span className="text-[11px] font-bold text-slate-300">toneladas</span>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950/90 border border-sky-500/40 rounded-xl p-2.5">
+                          <span className="text-[10px] text-sky-300 font-bold uppercase block">
+                            🛍️ Quantidade de Sacos
+                          </span>
+                          <div className="flex items-baseline justify-between gap-1 mt-1">
+                            <input
+                              type="number"
+                              step="1"
+                              value={pedido.sacos_real ?? 0}
+                              onChange={(e) => {
+                                const novosSacos = parseInt(e.target.value, 10) || 0;
+                                const tonAtual = pedido.toneladas_real ?? qtdTon;
+                                onAtualizarPedido({
+                                  ...pedido,
+                                  sacos_real: novosSacos,
+                                  quantidade:
+                                    novosSacos > 0
+                                      ? `${tonAtual} toneladas (${novosSacos} sacos)`
+                                      : `${tonAtual} toneladas`,
+                                });
+                              }}
+                              className="w-20 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm font-extrabold text-sky-400 font-mono outline-none focus:border-sky-400"
+                            />
+                            <span className="text-[11px] font-bold text-slate-300">sacos</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {(pedido.nome_funcionario || pedido.observacao) && (
+                        <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-2.5 space-y-1 text-[11px]">
+                          {pedido.nome_funcionario && (
+                            <span className="text-amber-300 font-bold block">
+                              👨‍🌾 Carga concluída por: <strong>{pedido.nome_funcionario}</strong>
+                            </span>
+                          )}
+                          {pedido.observacao && (
+                            <span className="text-slate-300 italic block">
+                              📝 Obs: &quot;{pedido.observacao}&quot;
+                            </span>
+                          )}
+                        </div>
+                      )}
 
                       {pedido.foto_caminhao_carregado && (
                         <div className="bg-slate-950/90 border border-emerald-700/50 rounded-xl p-2 flex items-center justify-between gap-2">
@@ -1698,46 +1799,36 @@ export function FluxoPedidosCarregamento({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 border-b border-slate-800/80 pb-2">
-                        <div>
-                          <span className="text-[10px] text-slate-400 uppercase font-bold block">
-                            📦 2. Quantidade da Carga:
-                          </span>
-                          <span className="font-bold text-emerald-400 block">
+                      <div className="border-b border-slate-800/80 pb-2 space-y-1">
+                        <span className="text-[10px] text-emerald-300 uppercase font-extrabold block">
+                          📦 2. O que Embalar e Carregar:
+                        </span>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="font-extrabold text-emerald-400 text-xs">
                             🌾 {p.produto}
                           </span>
-                          <span className="font-bold text-white text-[11px]">
-                            Solicitado: {p.quantidade || `${p.quantidade_toneladas_num || 10}t`}
+                          <span className="bg-emerald-950 text-emerald-300 border border-emerald-700 px-2 py-0.5 rounded-lg font-extrabold text-[11px]">
+                            Preparar: {p.quantidade || `${p.quantidade_toneladas_num || 10}t`}
                           </span>
-                        </div>
-                        <div>
-                          <span className="text-[10px] text-slate-400 uppercase font-bold block">
-                            ⚖️ Peso / Sacos Carregados:
-                          </span>
-                          <span className="font-bold text-sky-300 block">
-                            {p.toneladas_real != null
-                              ? `${p.toneladas_real} toneladas`
-                              : 'Aguardando carga'}
-                          </span>
-                          {p.sacos_real != null && p.sacos_real > 0 && (
-                            <span className="text-[11px] text-amber-300 font-semibold block">
-                              🛍️ {p.sacos_real} sacos
-                            </span>
-                          )}
                         </div>
                       </div>
 
-                      <div>
-                        <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
+                      <div className="space-y-0.5">
+                        <span className="text-[10px] text-amber-300 uppercase font-extrabold flex items-center gap-1">
                           <Truck className="w-3 h-3 text-amber-400" /> 3. Quem vem buscar para o Frete:
                         </span>
-                        <span className="text-amber-300 font-bold block mt-0.5">
+                        <span className="text-white font-bold block mt-0.5">
                           {motoristaObj
                             ? `🚚 ${motoristaObj.nome} — ${motoristaObj.tipo_veiculo || 'Caminhão'} (${motoristaObj.capacidade_carga_toneladas || 10}t)`
                             : p.tem_frete === false
                             ? '🚜 Cliente retira com caminhão próprio no local'
                             : '🚚 Motorista terceirizado (Em definição)'}
                         </span>
+                        {motoristaObj?.telefone && (
+                          <span className="text-[11px] font-extrabold text-amber-300 font-mono block">
+                            📞 Nº do Motorista: {motoristaObj.telefone}
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -2042,6 +2133,60 @@ export function FluxoPedidosCarregamento({
                     ))}
                   </div>
                 )}
+              </div>
+
+              {/* 4. Nome do Funcionário e Observações da Carga */}
+              <div className="bg-slate-950/90 border border-amber-500/40 rounded-xl p-3 space-y-2.5">
+                <div>
+                  <label className="text-[11px] text-amber-300 font-extrabold uppercase flex items-center gap-1 mb-1">
+                    <User className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Funcionário que Concluiu a Carga</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={cargaForm.nomeFuncionario}
+                    onChange={(e) =>
+                      setCargaForm({ ...cargaForm, nomeFuncionario: e.target.value })
+                    }
+                    placeholder="Digite o nome do funcionário (Ex: Carlos, João...)"
+                    className="w-full bg-slate-900 border border-amber-500/50 rounded-xl p-2 text-white font-bold text-xs outline-none focus:border-amber-400"
+                  />
+                  {funcionarios.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {funcionarios.map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() =>
+                            setCargaForm({ ...cargaForm, nomeFuncionario: f.nome })
+                          }
+                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
+                            cargaForm.nomeFuncionario === f.nome
+                              ? 'bg-amber-500 text-slate-950 border-amber-400'
+                              : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-slate-500'
+                          }`}
+                        >
+                          👨‍🌾 {f.nome}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-slate-200 font-bold block mb-1">
+                    📝 Observações do Funcionário / Carga (Opcional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={cargaForm.observacaoCarga}
+                    onChange={(e) =>
+                      setCargaForm({ ...cargaForm, observacaoCarga: e.target.value })
+                    }
+                    placeholder="Ex: Carga coberta com lona nova, entregue na fazenda sede..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-white text-xs outline-none resize-none focus:border-amber-500"
+                  />
+                </div>
               </div>
 
               {/* Resumo Final Calculado na Hora da Carga */}

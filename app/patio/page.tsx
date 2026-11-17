@@ -49,12 +49,14 @@ export default function TelaExclusivaPatioFuncionarios() {
   const [filtroStatus, setFiltroStatus] = useState<'pendentes' | 'hoje' | 'carregados' | 'todos'>('pendentes');
   const [filtroFuncionario, setFiltroFuncionario] = useState<string>('todos');
 
-  // Modal de confirmação de carga com foto do caminhão
+  // Modal de confirmação de carga com foto do caminhão + nome do funcionário e observação
   const [pedidoSelecionado, setPedidoSelecionado] = useState<Pedido | null>(null);
+  const [nomeFuncionarioCarga, setNomeFuncionarioCarga] = useState<string>('');
   const [toneladasReal, setToneladasReal] = useState<string>('');
   const [sacosReal, setSacosReal] = useState<string>('');
   const [fotoCaminhao, setFotoCaminhao] = useState<string | null>(null);
   const [custosExtras, setCustosExtras] = useState<CustoExtraPedido[]>([]);
+  const [observacaoCarga, setObservacaoCarga] = useState<string>('');
   const [processandoFoto, setProcessandoFoto] = useState<boolean>(false);
   const [salvandoConfirmacao, setSalvandoConfirmacao] = useState<boolean>(false);
   const [avisoModal, setAvisoModal] = useState<string | null>(null);
@@ -199,11 +201,17 @@ export default function TelaExclusivaPatioFuncionarios() {
 
   const abrirModalConfirmarCarga = (pedido: Pedido) => {
     const qtdEstimada = pedido.toneladas_real ?? pedido.quantidade_toneladas_num ?? 10;
+    const ultimoNomeSalvo =
+      typeof window !== 'undefined'
+        ? localStorage.getItem('caboclo_nome_funcionario_patio') || ''
+        : '';
     setPedidoSelecionado(pedido);
+    setNomeFuncionarioCarga(pedido.nome_funcionario || ultimoNomeSalvo);
     setToneladasReal(String(qtdEstimada));
     setSacosReal(pedido.sacos_real != null ? String(pedido.sacos_real) : '');
     setFotoCaminhao(pedido.foto_caminhao_carregado || null);
     setCustosExtras(pedido.custos_extras ? [...pedido.custos_extras] : []);
+    setObservacaoCarga(pedido.observacao || '');
     setAvisoModal(null);
   };
 
@@ -236,9 +244,8 @@ export default function TelaExclusivaPatioFuncionarios() {
 
   const salvarConfirmacaoCargaComFoto = async () => {
     if (!pedidoSelecionado) return;
-    const tonNum = parseFloat(toneladasReal);
-    if (isNaN(tonNum) || tonNum <= 0) {
-      setAvisoModal('Informe a quantidade de toneladas carregadas no caminhão.');
+    if (!nomeFuncionarioCarga.trim()) {
+      setAvisoModal('Por favor, informe o seu nome (Funcionário responsável pela carga).');
       return;
     }
     if (!fotoCaminhao) {
@@ -246,49 +253,35 @@ export default function TelaExclusivaPatioFuncionarios() {
       return;
     }
 
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_nome_funcionario_patio', nomeFuncionarioCarga.trim());
+    }
+
     setSalvandoConfirmacao(true);
     try {
-      const sacosNum = sacosReal.trim() ? parseInt(sacosReal, 10) : null;
-      const tonAntiga = pedidoSelecionado.quantidade_toneladas_num || 10;
-      const baseAntiga =
-        pedidoSelecionado.valor_base_produtos != null
-          ? Number(pedidoSelecionado.valor_base_produtos)
-          : Number(pedidoSelecionado.valor_total || 0);
-      const precoPorTon = tonAntiga > 0 ? baseAntiga / tonAntiga : 450;
-      const novoValorBase = Math.round(tonNum * precoPorTon * 100) / 100;
-
-      const freteRepassado =
-        pedidoSelecionado.tem_frete !== false &&
-        pedidoSelecionado.tipo_frete_cobranca !== 'custo_interno'
-          ? Number(pedidoSelecionado.valor_frete || 0)
-          : 0;
-      const extrasRepassados = custosExtras
-        .filter((e) => e.tipo === 'repassar_cliente')
-        .reduce((acc, e) => acc + (Number(e.valor) || 0), 0);
-
-      const valorFinalCliente = novoValorBase + freteRepassado + extrasRepassados;
-      const qtdTexto =
-        sacosNum && sacosNum > 0
-          ? `${tonNum} toneladas (${sacosNum} sacos)`
-          : `${tonNum} toneladas`;
+      const tonNum =
+        pedidoSelecionado.toneladas_real ??
+        pedidoSelecionado.quantidade_toneladas_num ??
+        10;
+      const sacosNum = pedidoSelecionado.sacos_real ?? null;
 
       const dataHoraConfirmacao =
         new Date().toLocaleDateString('pt-BR') +
         ' às ' +
         new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
+      const funcCadastrado = funcionarios.find(
+        (f) => f.nome.trim().toLowerCase() === nomeFuncionarioCarga.trim().toLowerCase()
+      );
+
       const pedidoAtualizado: Pedido = {
         ...pedidoSelecionado,
         etapa_pedido: 'carregado',
-        toneladas_real: tonNum,
-        sacos_real: sacosNum,
-        quantidade_toneladas_num: tonNum,
-        quantidade: qtdTexto,
-        valor_base_produtos: novoValorBase,
-        custos_extras: custosExtras,
-        valor_total: valorFinalCliente,
+        nome_funcionario: nomeFuncionarioCarga.trim(),
+        funcionario_id: funcCadastrado?.id || pedidoSelecionado.funcionario_id || null,
         foto_caminhao_carregado: fotoCaminhao,
         data_confirmacao_carga: dataHoraConfirmacao,
+        observacao: observacaoCarga.trim() || null,
         estoque_baixado: true,
       };
 
@@ -540,51 +533,53 @@ export default function TelaExclusivaPatioFuncionarios() {
                     )}
                   </div>
 
-                  {/* 2. QUANTIDADE DA CARGA E PRODUTO */}
-                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 grid grid-cols-2 gap-2">
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
-                        <Package className="w-3 h-3 text-emerald-400" /> 2. Produto & Quantidade:
-                      </span>
-                      <span className="text-xs font-extrabold text-emerald-400 block mt-0.5">
+                  {/* 2. O QUE EMBALAR E CARREGAR (PRODUTO E QUANTIDADE EM DESTAQUE) */}
+                  <div className="bg-slate-950 p-3.5 rounded-xl border border-emerald-500/40 space-y-1.5">
+                    <span className="text-[10px] text-emerald-300 uppercase font-extrabold flex items-center gap-1">
+                      <Package className="w-3.5 h-3.5 text-emerald-400" /> 2. O que Embalar e Carregar:
+                    </span>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-sm font-extrabold text-white block">
                         🌾 {p.produto || 'Silagem'}
                       </span>
-                      <span className="text-xs font-bold text-white block">
-                        Pedida: {p.quantidade || `${p.quantidade_toneladas_num || 10} toneladas`}
+                      <span className="bg-emerald-950 text-emerald-300 border border-emerald-700 px-2.5 py-1 rounded-lg text-xs font-extrabold">
+                        📦 Preparar: {p.quantidade || `${p.quantidade_toneladas_num || 10} toneladas`}
                       </span>
                     </div>
-
-                    <div className="border-l border-slate-800 pl-2.5">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold block">
-                        ⚖️ Peso / Sacos Reais:
-                      </span>
-                      <span className="text-xs font-extrabold text-sky-300 block mt-0.5">
-                        {p.toneladas_real != null
-                          ? `${p.toneladas_real} toneladas`
-                          : 'Aguardando pesagem'}
-                      </span>
-                      {p.sacos_real != null && p.sacos_real > 0 && (
-                        <span className="text-[11px] font-bold text-amber-300 block">
-                          🛍️ {p.sacos_real} sacos
-                        </span>
-                      )}
-                    </div>
+                    {p.itens_venda && p.itens_venda.length > 1 && (
+                      <div className="pt-1 border-t border-slate-800/80 space-y-0.5 text-[11px] text-slate-300">
+                        {p.itens_venda.map((iv, i) => (
+                          <div key={i} className="flex justify-between">
+                            <span>• {iv.nome_produto}</span>
+                            <strong className="text-emerald-300">
+                              {iv.quantidade} {iv.unidade_medida}
+                            </strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
-                  {/* 3. QUEM VAI VIR BUSCAR PARA FAZER O FRETE */}
-                  <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-2">
-                    <div className="space-y-0.5 min-w-0">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
-                        <Truck className="w-3 h-3 text-amber-400" /> 3. Quem vem buscar (Frete / Motorista):
+                  {/* 3. QUEM VAI VIR BUSCAR PARA FAZER O FRETE + NÚMERO DO MOTORISTA */}
+                  <div className="bg-slate-950 p-3.5 rounded-xl border border-amber-500/40 flex items-center justify-between gap-2">
+                    <div className="space-y-1 min-w-0">
+                      <span className="text-[10px] text-amber-300 uppercase font-extrabold flex items-center gap-1">
+                        <Truck className="w-3.5 h-3.5 text-amber-400" /> 3. Quem vem buscar (Motorista / Frete):
                       </span>
                       {motoristaObj ? (
                         <>
-                          <span className="text-xs font-extrabold text-amber-300 block truncate">
+                          <span className="text-sm font-extrabold text-white block truncate">
                             🚚 {motoristaObj.nome}
                           </span>
                           <span className="text-[11px] text-slate-300 block">
-                            Veículo: <strong>{motoristaObj.tipo_veiculo || 'Caminhão'}</strong> (Cap.{' '}
+                            Veículo: <strong>{motoristaObj.tipo_veiculo || 'Caminhão'}</strong> (Capacidade:{' '}
                             {motoristaObj.capacidade_carga_toneladas || 10}t)
+                          </span>
+                          <span className="text-xs font-extrabold text-amber-300 flex items-center gap-1 pt-0.5 font-mono">
+                            <Phone className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            <span>
+                              Nº Motorista: {motoristaObj.telefone || 'Não informado'}
+                            </span>
                           </span>
                         </>
                       ) : p.tem_frete === false ? (
@@ -603,12 +598,18 @@ export default function TelaExclusivaPatioFuncionarios() {
                         href={`https://wa.me/55${motoristaObj.telefone.replace(/\D/g, '')}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 px-2.5 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-1 shrink-0"
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1 shrink-0 shadow"
                       >
-                        <Phone className="w-3 h-3" /> Ligar/Whats
+                        <Phone className="w-3.5 h-3.5" /> Whats
                       </a>
                     )}
                   </div>
+
+                  {p.observacao && (
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-300 italic">
+                      📝 Obs: &quot;{p.observacao}&quot;
+                    </div>
+                  )}
 
                   {/* FOTO DO CAMINHÃO CARREGADO (SE JÁ TIVER SIDO ENVIADA) */}
                   {p.foto_caminhao_carregado && (
@@ -776,94 +777,52 @@ export default function TelaExclusivaPatioFuncionarios() {
                 )}
               </div>
 
-              {/* 2. PESO REAL E QUANTIDADE DE SACOS CARREGADOS */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1 border-t border-slate-800">
+              {/* 2. NOME DO FUNCIONÁRIO E OBSERVAÇÃO DA CARGA */}
+              <div className="bg-slate-950/90 border border-amber-500/40 rounded-xl p-3 space-y-3">
                 <div>
-                  <label className="text-[11px] text-emerald-300 font-bold block mb-1">
-                    2. Toneladas Carregadas (Real) *
+                  <label className="text-[11px] text-amber-300 font-extrabold uppercase flex items-center gap-1 mb-1">
+                    <User className="w-3.5 h-3.5 text-amber-400" />
+                    <span>2. Seu Nome (Funcionário que Concluiu a Carga) *</span>
                   </label>
                   <input
-                    type="number"
-                    step="0.1"
-                    value={toneladasReal}
-                    onChange={(e) => setToneladasReal(e.target.value)}
-                    placeholder="Ex: 10.5"
-                    className="w-full bg-slate-950 border border-emerald-500/50 rounded-lg p-2 text-white font-bold outline-none"
+                    type="text"
+                    value={nomeFuncionarioCarga}
+                    onChange={(e) => setNomeFuncionarioCarga(e.target.value)}
+                    placeholder="Digite seu nome (Ex: Carlos, João...)"
+                    className="w-full bg-slate-900 border border-amber-500/50 rounded-xl p-2.5 text-white font-bold text-xs outline-none focus:border-amber-400"
                   />
-                </div>
-
-                <div>
-                  <label className="text-[11px] text-sky-300 font-bold block mb-1">
-                    3. Qtd. de Sacos (Se houver)
-                  </label>
-                  <input
-                    type="number"
-                    step="1"
-                    value={sacosReal}
-                    onChange={(e) => setSacosReal(e.target.value)}
-                    placeholder="Ex: 350"
-                    className="w-full bg-slate-950 border border-sky-500/40 rounded-lg p-2 text-white font-bold outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* 3. CHAPAS / EXTRAS NA CARGA (OPCIONAL) */}
-              <div className="border-t border-slate-800 pt-2.5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-slate-300 font-bold">
-                    4. Precisou de Chapa / Ajudante? (Opcional)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={adicionarChapaExtra}
-                    className="bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/40 text-amber-300 px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1"
-                  >
-                    <Plus className="w-3 h-3" /> + Adicionar Chapa
-                  </button>
-                </div>
-
-                {custosExtras.map((ext, idx) => (
-                  <div
-                    key={ext.id}
-                    className="bg-slate-950 p-2 rounded-xl border border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-1.5"
-                  >
-                    <input
-                      type="text"
-                      value={ext.descricao}
-                      onChange={(e) => {
-                        const nov = [...custosExtras];
-                        nov[idx].descricao = e.target.value;
-                        setCustosExtras(nov);
-                      }}
-                      placeholder="Ex: Chapa"
-                      className="bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white text-[11px] outline-none"
-                    />
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-slate-400">R$</span>
-                      <input
-                        type="number"
-                        step="10"
-                        value={ext.valor || ''}
-                        onChange={(e) => {
-                          const nov = [...custosExtras];
-                          nov[idx].valor = parseFloat(e.target.value) || 0;
-                          setCustosExtras(nov);
-                        }}
-                        placeholder="Valor"
-                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-1.5 text-white font-bold text-xs outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setCustosExtras(custosExtras.filter((it) => it.id !== ext.id))
-                        }
-                        className="text-red-400 p-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                  {funcionarios.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1.5">
+                      {funcionarios.map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setNomeFuncionarioCarga(f.nome)}
+                          className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border transition-all ${
+                            nomeFuncionarioCarga === f.nome
+                              ? 'bg-amber-500 text-slate-950 border-amber-400'
+                              : 'bg-slate-900 text-slate-300 border-slate-700 hover:border-slate-500'
+                          }`}
+                        >
+                          👨‍🌾 {f.nome}
+                        </button>
+                      ))}
                     </div>
-                  </div>
-                ))}
+                  )}
+                </div>
+
+                <div>
+                  <label className="text-[11px] text-slate-200 font-bold block mb-1">
+                    📝 3. Alguma Observação da Carga / Caminhão (Opcional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={observacaoCarga}
+                    onChange={(e) => setObservacaoCarga(e.target.value)}
+                    placeholder="Digite aqui qualquer observação sobre o carregamento, lona, horário, sacaria..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-xl p-2 text-white text-xs outline-none resize-none focus:border-amber-400"
+                  />
+                </div>
               </div>
             </div>
 

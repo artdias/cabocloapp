@@ -1167,6 +1167,19 @@ export default function CabocloAgroCRM() {
 
         setContatos(novosContatos);
 
+        // Se o modal de Pré-Pedido estiver aberto, já seleciona automaticamente o cliente recém-cadastrado
+        if (novoContato.tipo === 'cliente' && novoContato.id) {
+          setNovoPedidoForm((prev) => ({ ...prev, clienteId: novoContato.id! }));
+          setErrosPedido((prev) => {
+            const c = { ...prev };
+            delete c.clienteId;
+            if (Object.keys(c).length === 0) setAvisoValidacaoPedido(null);
+            return c;
+          });
+        } else if (novoContato.tipo === 'terceiro' && novoContato.id) {
+          setNovoPedidoForm((prev) => ({ ...prev, terceiroId: novoContato.id! }));
+        }
+
         let pedidoCriadoParaBanco: Pedido | null = null;
         let novosPedidos = pedidos;
 
@@ -3322,6 +3335,11 @@ export default function CabocloAgroCRM() {
                             <Phone className="w-3 h-3 text-slate-500" /> {contato.telefone}
                           </span>
                         )}
+                        {contato.observacao && !isExpanded && (
+                          <span className="text-[11px] text-slate-400 italic block mt-1 truncate">
+                            📝 Obs: &quot;{contato.observacao}&quot;
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -4045,7 +4063,7 @@ export default function CabocloAgroCRM() {
 
       {/* MODAL DE CADASTRO / EDIÇÃO MANUAL DE REGISTROS (RESPONSIVO COM CABEÇALHO E RODAPÉ FIXOS) */}
       {isManualModalOpen && formData && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full max-h-[92dvh] flex flex-col shadow-2xl overflow-hidden">
             {/* Cabeçalho fixo do modal */}
             <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3 shrink-0 bg-slate-900">
@@ -4498,9 +4516,18 @@ export default function CabocloAgroCRM() {
 
               {/* Seleção do Cliente */}
               <div>
-                <label className={`text-[11px] font-semibold block mb-1 ${errosPedido.clienteId ? 'text-red-400' : 'text-slate-300'}`}>
-                  1. Selecionar Cliente *
-                </label>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <label className={`text-[11px] font-semibold block ${errosPedido.clienteId ? 'text-red-400' : 'text-slate-300'}`}>
+                    1. Selecionar Cliente *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => abrirCadastroManual('cliente')}
+                    className="text-emerald-400 hover:text-emerald-300 text-[10px] font-bold flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <UserPlus className="w-3 h-3" /> + Cadastrar Cliente
+                  </button>
+                </div>
                 <select
                   ref={pedidoClienteRef}
                   value={novoPedidoForm.clienteId}
@@ -4779,6 +4806,22 @@ export default function CabocloAgroCRM() {
                   return null;
                 })()}
               </div>
+
+              {/* 6. Campo de Observação do Pedido (Opcional) */}
+              <div className="border-t border-slate-800 pt-2.5">
+                <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                  6. Observações do Pedido (Opcional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={novoPedidoForm.observacao}
+                  onChange={(e) =>
+                    setNovoPedidoForm({ ...novoPedidoForm, observacao: e.target.value })
+                  }
+                  placeholder="Ex: Entregar pela manhã, portão azul, avisar antes de sair..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-slate-100 outline-none resize-none text-xs focus:border-emerald-500"
+                />
+              </div>
             </div>
 
             {/* Rodapé fixo do modal (sempre visível) */}
@@ -4906,6 +4949,7 @@ export default function CabocloAgroCRM() {
                     <option value="toneladas">Toneladas (t)</option>
                     <option value="sacos">Sacos</option>
                     <option value="kg">Quilos (kg)</option>
+                    <option value="unidade">Unidade (un)</option>
                   </select>
                 </div>
               </div>
@@ -4951,6 +4995,21 @@ export default function CabocloAgroCRM() {
                     className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                  Observações do Estoque (Opcional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={novoItemEstoqueForm.observacao}
+                  onChange={(e) =>
+                    setNovoItemEstoqueForm({ ...novoItemEstoqueForm, observacao: e.target.value })
+                  }
+                  placeholder="Ex: Silo 2, safra nova, lote especial, fornecedor..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none resize-none text-xs focus:border-sky-500"
+                />
               </div>
             </div>
 

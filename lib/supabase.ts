@@ -52,13 +52,23 @@ export interface Contato {
   created_at?: string;
 }
 
+export interface PivoIrrigacao {
+  id: string;
+  nome: string; // Ex: 'Pivô 01', 'Pivô 02 - Baixada'
+  area_hectares?: string | null; // Ex: '45 ha'
+  cultura_atual?: string | null; // Ex: 'Milho Safra', 'Sorgo'
+  observacao?: string | null;
+}
+
 export interface ItemEstoque {
   id: string;
   nome: string;
   quantidade_disponivel: number;
-  unidade_medida: string; // Ex: 'toneladas', 'sacos', 'kg'
+  unidade_medida: string; // Ex: 'toneladas', 'sacos', 'kg', 'unidade'
   preco_unitario: number; // Ex: 450.00
   alerta_minimo: number; // Ex: 20
+  pivo_id?: string | null;
+  pivo_nome?: string | null;
   observacao?: string | null;
 }
 
@@ -524,6 +534,43 @@ export async function carregarEstoqueDoBanco(): Promise<ItemEstoque[] | null> {
   try {
     const parsed = JSON.parse(data[0].texto_transcrito);
     if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export async function salvarPivosNoBanco(pivos: PivoIrrigacao[]): Promise<boolean> {
+  if (!isSupabaseConfigured) return false;
+  const { error } = await supabase.from('atendimentos').insert([
+    {
+      nome_cliente: '__PIVOS_SYNC__',
+      texto_transcrito: JSON.stringify(pivos),
+    },
+  ]);
+  if (error) {
+    console.warn('Erro ao salvar pivôs no Supabase:', error.message);
+    return false;
+  }
+  return true;
+}
+
+export async function carregarPivosDoBanco(): Promise<PivoIrrigacao[] | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from('atendimentos')
+    .select('texto_transcrito, created_at')
+    .eq('nome_cliente', '__PIVOS_SYNC__')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (error || !data || data.length === 0 || !data[0].texto_transcrito) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(data[0].texto_transcrito);
+    if (Array.isArray(parsed)) {
       return parsed;
     }
   } catch {}
