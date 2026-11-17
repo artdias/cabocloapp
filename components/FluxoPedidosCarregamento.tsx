@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   Contato,
   Pedido,
@@ -8,6 +8,7 @@ import {
   EtapaPedido,
   CustoExtraPedido,
   StatusFinanceiro,
+  comprimirFotoCaminhao,
 } from '@/lib/supabase';
 import {
   ShoppingBag,
@@ -29,6 +30,11 @@ import {
   ClipboardCheck,
   Package,
   RefreshCw,
+  Camera,
+  Copy,
+  ExternalLink,
+  Eye,
+  User,
 } from 'lucide-react';
 
 interface FluxoPedidosCarregamentoProps {
@@ -143,8 +149,17 @@ export function FluxoPedidosCarregamento({
 }: FluxoPedidosCarregamentoProps) {
   const [subVisao, setSubVisao] = useState<'pedidos' | 'funcionarios'>(modoInicial);
   const [filtroEtapa, setFiltroEtapa] = useState<'todos' | EtapaPedido>('todos');
+  const [filtroPatioStatus, setFiltroPatioStatus] = useState<'pendentes' | 'carregados' | 'todos'>('pendentes');
+  const [linkCopiado, setLinkCopiado] = useState<boolean>(false);
+  const [processandoFotoCarga, setProcessandoFotoCarga] = useState<boolean>(false);
+  const [fotoAmpliadaModal, setFotoAmpliadaModal] = useState<{
+    url: string;
+    cliente: string;
+    data?: string | null;
+  } | null>(null);
+  const inputFotoCargaRef = useRef<HTMLInputElement>(null);
 
-  // Modal de Conferência de Carga Real + Extras (Chapa, etc.)
+  // Modal de Conferência de Carga Real + Extras (Chapa, etc.) + Foto do Caminhão
   const [modalCargaPedido, setModalCargaPedido] = useState<Pedido | null>(null);
   const [cargaForm, setCargaForm] = useState<{
     toneladasReal: string;
@@ -156,6 +171,7 @@ export function FluxoPedidosCarregamento({
     tipoFreteCobranca: 'repassar_cliente' | 'custo_interno';
     custosExtras: CustoExtraPedido[];
     observacaoCarga: string;
+    fotoCaminhao: string | null;
   }>({
     toneladasReal: '',
     sacosReal: '',
@@ -166,6 +182,7 @@ export function FluxoPedidosCarregamento({
     tipoFreteCobranca: 'repassar_cliente',
     custosExtras: [],
     observacaoCarga: '',
+    fotoCaminhao: null,
   });
 
   const terceiros = useMemo(
@@ -191,7 +208,30 @@ export function FluxoPedidosCarregamento({
       tipoFreteCobranca: p.tipo_frete_cobranca || 'repassar_cliente',
       custosExtras: p.custos_extras ? [...p.custos_extras] : [],
       observacaoCarga: p.observacao || '',
+      fotoCaminhao: p.foto_caminhao_carregado || null,
     });
+  };
+
+  const handleSelecionarFotoModalCarga = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setProcessandoFotoCarga(true);
+    try {
+      const compressed = await comprimirFotoCaminhao(file, 800, 0.65);
+      setCargaForm((prev) => ({ ...prev, fotoCaminhao: compressed }));
+    } catch {
+      // ignora erro de leitura
+    } finally {
+      setProcessandoFotoCarga(false);
+    }
+  };
+
+  const copiarLinkPatio = () => {
+    if (typeof window === 'undefined') return;
+    const url = `${window.location.origin}/patio`;
+    navigator.clipboard.writeText(url);
+    setLinkCopiado(true);
+    setTimeout(() => setLinkCopiado(false), 3000);
   };
 
   const adicionarCustoExtra = (descricaoPadrao: string = '') => {
@@ -253,6 +293,10 @@ export function FluxoPedidosCarregamento({
       .join(' + ');
 
     const jaBaixou = Boolean(modalCargaPedido.estoque_baixado);
+    const dataHoraConfirmacao =
+      new Date().toLocaleDateString('pt-BR') +
+      ' às ' +
+      new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
     const pedidoFinalizado: Pedido = {
       ...modalCargaPedido,
@@ -269,6 +313,12 @@ export function FluxoPedidosCarregamento({
       custos_extras: cargaForm.custosExtras,
       valor_total: valorTotalFinalCliente,
       observacao: cargaForm.observacaoCarga || null,
+      foto_caminhao_carregado:
+        cargaForm.fotoCaminhao ?? modalCargaPedido.foto_caminhao_carregado ?? null,
+      data_confirmacao_carga:
+        cargaForm.fotoCaminhao || !modalCargaPedido.data_confirmacao_carga
+          ? dataHoraConfirmacao
+          : modalCargaPedido.data_confirmacao_carga,
       estoque_baixado: true,
     };
 
@@ -288,25 +338,34 @@ export function FluxoPedidosCarregamento({
     });
   }, [pedidos, filtroEtapa]);
 
-  // Pedidos para a Tela de Funcionários (Agendados, em Carregamento ou Carregados recentemente)
+  const qtdCargasPendentes = useMemo(
+    () =>
+      pedidos.filter(
+        (p) => p.tipo_operacao === 'venda' && (p.etapa_pedido || 'pre_pedido') !== 'carregado'
+      ).length,
+    [pedidos]
+  );
+
+  // Pedidos para a Tela de Funcionários (Pendentes vs Carregados vs Todos)
   const pedidosCarregamentoFuncionarios = useMemo(() => {
     return [...pedidos]
       .filter((p) => {
+        if (p.tipo_operacao !== 'venda') return false;
         const etapa = p.etapa_pedido || 'pre_pedido';
-        return etapa === 'agendado' || etapa === 'carregado' || Boolean(p.data_carregamento);
+        if (filtroPatioStatus === 'pendentes') {
+          return etapa !== 'carregado';
+        }
+        if (filtroPatioStatus === 'carregados') {
+          return etapa === 'carregado';
+        }
+        return true;
       })
       .sort((a, b) => {
-        const dA = a.data_carregamento || '9999-12-31';
-        const dB = b.data_carregamento || '9999-12-31';
+        const dA = a.data_carregamento || a.data_compra || '9999-12-31';
+        const dB = b.data_carregamento || a.data_compra || '9999-12-31';
         return dA.localeCompare(dB);
       });
-  }, [pedidos]);
-
-  const qtdCargasPendentes = useMemo(
-    () =>
-      pedidos.filter((p) => (p.etapa_pedido || 'pre_pedido') === 'agendado').length,
-    [pedidos]
-  );
+  }, [pedidos, filtroPatioStatus]);
 
   return (
     <div className="space-y-4">
@@ -367,48 +426,112 @@ export function FluxoPedidosCarregamento({
             </button>
           </div>
 
-          {/* Barra de Filtros por Etapa */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
-            {[
-              { id: 'todos', label: `Todos (${pedidos.length})` },
-              {
-                id: 'pre_pedido',
-                label: `1️⃣ Pré-Pedido / Frete (${
-                  pedidos.filter((p) => (p.etapa_pedido || 'pre_pedido') === 'pre_pedido').length
-                })`,
-              },
-              {
-                id: 'aguardando_cliente',
-                label: `2️⃣ Confirmar Cliente (${
-                  pedidos.filter((p) => p.etapa_pedido === 'aguardando_cliente').length
-                })`,
-              },
-              {
-                id: 'agendado',
-                label: `3️⃣ Agendados / Pátio (${
-                  pedidos.filter((p) => p.etapa_pedido === 'agendado').length
-                })`,
-              },
-              {
-                id: 'carregado',
-                label: `4️⃣ Carregados / Finais (${
-                  pedidos.filter((p) => p.etapa_pedido === 'carregado').length
-                })`,
-              },
-            ].map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setFiltroEtapa(f.id as any)}
-                className={`px-3 py-1.5 rounded-full whitespace-nowrap font-bold border transition-all ${
-                  filtroEtapa === f.id
-                    ? 'bg-emerald-500 text-slate-950 border-emerald-400'
-                    : 'bg-slate-900 text-slate-300 border-slate-800'
+          {/* Painel Visual de Filtros por Etapa (Grade sem arrastar para o lado) */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 space-y-2">
+            <button
+              type="button"
+              onClick={() => setFiltroEtapa('todos')}
+              className={`w-full py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-between border transition-all ${
+                filtroEtapa === 'todos'
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md'
+                  : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <ShoppingBag className="w-3.5 h-3.5" />
+                <span>Ver Todos os Pedidos</span>
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  filtroEtapa === 'todos'
+                    ? 'bg-slate-950 text-emerald-400'
+                    : 'bg-slate-800 text-slate-200'
                 }`}
               >
-                {f.label}
-              </button>
-            ))}
+                {pedidos.length}
+              </span>
+            </button>
+
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {[
+                {
+                  id: 'pre_pedido',
+                  passo: 'Etapa 1',
+                  titulo: 'Pré-Pedido / Frete',
+                  sub: 'Cotar caminhoneiro',
+                  icone: <Truck className="w-4 h-4 text-purple-400 shrink-0" />,
+                  qtd: pedidos.filter((p) => (p.etapa_pedido || 'pre_pedido') === 'pre_pedido').length,
+                  corAtiva: 'bg-purple-950/90 border-purple-400 text-white ring-1 ring-purple-400/50',
+                  corBadge: 'bg-purple-500 text-slate-950',
+                },
+                {
+                  id: 'aguardando_cliente',
+                  passo: 'Etapa 2',
+                  titulo: 'Confirmar Cliente',
+                  sub: 'Aprovar valor final',
+                  icone: <Users className="w-4 h-4 text-amber-400 shrink-0" />,
+                  qtd: pedidos.filter((p) => p.etapa_pedido === 'aguardando_cliente').length,
+                  corAtiva: 'bg-amber-950/90 border-amber-400 text-white ring-1 ring-amber-400/50',
+                  corBadge: 'bg-amber-400 text-slate-950',
+                },
+                {
+                  id: 'agendado',
+                  passo: 'Etapa 3',
+                  titulo: 'Agendados / Pátio',
+                  sub: 'Datas e avisos',
+                  icone: <Calendar className="w-4 h-4 text-sky-400 shrink-0" />,
+                  qtd: pedidos.filter((p) => p.etapa_pedido === 'agendado').length,
+                  corAtiva: 'bg-sky-950/90 border-sky-400 text-white ring-1 ring-sky-400/50',
+                  corBadge: 'bg-sky-400 text-slate-950',
+                },
+                {
+                  id: 'carregado',
+                  passo: 'Etapa 4',
+                  titulo: 'Carregados / Finais',
+                  sub: 'Peso real e pagamento',
+                  icone: <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />,
+                  qtd: pedidos.filter((p) => p.etapa_pedido === 'carregado').length,
+                  corAtiva: 'bg-emerald-950/90 border-emerald-400 text-white ring-1 ring-emerald-400/50',
+                  corBadge: 'bg-emerald-400 text-slate-950',
+                },
+              ].map((card) => {
+                const isAtivo = filtroEtapa === card.id;
+                return (
+                  <button
+                    key={card.id}
+                    type="button"
+                    onClick={() => setFiltroEtapa(card.id as any)}
+                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between gap-1.5 ${
+                      isAtivo
+                        ? `${card.corAtiva} shadow-md`
+                        : 'bg-slate-950/90 border-slate-800/90 text-slate-300 hover:border-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                        {card.icone}
+                        <span>{card.passo}</span>
+                      </span>
+                      <span
+                        className={`px-2 py-0.2 rounded-full text-[10px] font-extrabold ${
+                          isAtivo ? card.corBadge : 'bg-slate-800 text-slate-300'
+                        }`}
+                      >
+                        {card.qtd}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="font-extrabold text-[11px] text-white block leading-tight">
+                        {card.titulo}
+                      </span>
+                      <span className="text-[9px] text-slate-400 block mt-0.5">
+                        {card.sub}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Lista de Cards de Pedidos */}
@@ -1071,7 +1194,7 @@ export function FluxoPedidosCarregamento({
                             onClick={() => abrirModalConferenciaCarga(pedido)}
                             className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1"
                           >
-                            <Scale className="w-3 h-3 text-amber-400" /> Ajustar Carga
+                            <Camera className="w-3 h-3 text-amber-400" /> Carga / Foto
                           </button>
 
                           <button
@@ -1107,6 +1230,48 @@ export function FluxoPedidosCarregamento({
                           </button>
                         </div>
                       </div>
+
+                      {pedido.foto_caminhao_carregado && (
+                        <div className="bg-slate-950/90 border border-emerald-700/50 rounded-xl p-2 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <img
+                              src={pedido.foto_caminhao_carregado}
+                              alt="Caminhão carregado"
+                              onClick={() =>
+                                setFotoAmpliadaModal({
+                                  url: pedido.foto_caminhao_carregado!,
+                                  cliente: pedido.nome_cliente,
+                                  data: pedido.data_confirmacao_carga,
+                                })
+                              }
+                              className="w-11 h-11 object-cover rounded-lg border border-emerald-500/60 cursor-pointer shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <span className="text-[11px] font-bold text-emerald-300 block truncate">
+                                📸 Caminhão Carregado Confirmado
+                              </span>
+                              {pedido.data_confirmacao_carga && (
+                                <span className="text-[10px] text-slate-400 block">
+                                  {pedido.data_confirmacao_carga}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFotoAmpliadaModal({
+                                url: pedido.foto_caminhao_carregado!,
+                                cliente: pedido.nome_cliente,
+                                data: pedido.data_confirmacao_carga,
+                              })
+                            }
+                            className="bg-slate-800 hover:bg-slate-700 text-sky-300 px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 shrink-0"
+                          >
+                            <Eye className="w-3 h-3" /> Ver Foto
+                          </button>
+                        </div>
+                      )}
 
                       {/* BLOCO DE CONFIRMAÇÃO DE PAGAMENTO NO ESTÁGIO FINAL */}
                       <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-2.5 space-y-2.5">
@@ -1342,25 +1507,125 @@ export function FluxoPedidosCarregamento({
       {/* ===================================================================== */}
       {subVisao === 'funcionarios' && (
         <div className="space-y-3.5">
-          <div className="bg-gradient-to-r from-amber-950/70 to-slate-900 border border-amber-500/40 rounded-2xl p-4 space-y-1.5 shadow-lg">
-            <div className="flex items-center justify-between">
+          {/* Card do Link Exclusivo para Funcionários (/patio) */}
+          <div className="bg-gradient-to-r from-amber-950/80 via-slate-900 to-slate-900 border border-amber-500/50 rounded-2xl p-4 space-y-3 shadow-lg">
+            <div className="flex items-center justify-between gap-2">
               <h2 className="text-sm font-extrabold text-amber-300 flex items-center gap-2">
-                <ClipboardCheck className="w-5 h-5 text-amber-400" />
-                <span>Painel de Funcionários — Carregamentos & Datas</span>
+                <ClipboardCheck className="w-5 h-5 text-amber-400 shrink-0" />
+                <span>Painel de Funcionários — Carregamentos & Foto</span>
               </h2>
-              <span className="bg-amber-500 text-slate-950 text-[10px] px-2 py-0.5 rounded-full font-extrabold">
+              <span className="bg-amber-500 text-slate-950 text-[10px] px-2 py-0.5 rounded-full font-extrabold shrink-0">
                 {qtdCargasPendentes} pendentes
               </span>
             </div>
+
             <p className="text-xs text-slate-300 leading-relaxed">
-              Confira os pedidos agendados para carregar, prepare a silagem na data marcada e informe o{' '}
-              <strong>peso real, quantidade de sacos e chapas/extras</strong> na hora de encher o caminhão.
+              Envie o <strong>Link Exclusivo do Pátio</strong> para os funcionários verem apenas os carregamentos pendentes, a quantidade da carga, quem vem buscar para o frete, para qual cliente é, e confirmarem a carga com uma <strong>foto do caminhão carregado</strong>:
             </p>
+
+            {/* Caixa com Link Específico + Botões Copiar / WhatsApp / Abrir */}
+            <div className="bg-slate-950 border border-amber-500/30 rounded-xl p-2.5 space-y-2">
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="text-slate-400 font-semibold shrink-0">🔗 Link Funcionário:</span>
+                <code className="text-amber-300 font-mono truncate bg-slate-900 px-2 py-0.5 rounded border border-slate-800 flex-1 text-right">
+                  {typeof window !== 'undefined' ? `${window.location.origin}/patio` : '/patio'}
+                </code>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={copiarLinkPatio}
+                  className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 py-2 px-2 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 transition-all active:scale-95"
+                >
+                  <Copy className="w-3.5 h-3.5 shrink-0" />
+                  <span>{linkCopiado ? '✅ Copiado!' : 'Copiar Link'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url =
+                      typeof window !== 'undefined'
+                        ? `${window.location.origin}/patio`
+                        : 'https://cabocloapp.vercel.app/patio';
+                    const funcPadrao = funcionarios[0];
+                    onDispararWhatsApp(
+                      funcPadrao?.telefone,
+                      funcPadrao?.nome || 'Equipe Pátio',
+                      `🚜 *PAINEL DE CARREGAMENTOS — CABOCLO SILAGEM*\nAcesse o link abaixo para conferir os carregamentos pendentes, ver a quantidade da carga, qual motorista vem buscar, para qual cliente é e confirmar com a foto do caminhão carregado:\n👉 ${url}`
+                    );
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white py-2 px-2 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 shadow transition-all active:scale-95"
+                >
+                  <img src="/whatsapp.png" alt="WA" className="w-3.5 h-3.5 shrink-0" />
+                  <span>Enviar p/ Func.</span>
+                </button>
+
+                <a
+                  href="/patio"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-sky-600 hover:bg-sky-500 text-white py-2 px-2 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 shadow transition-all active:scale-95"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                  <span>Abrir Link</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Abas de Filtro: Carregamentos Pendentes vs Já Carregados vs Todos */}
+          <div className="grid grid-cols-3 gap-1.5 bg-slate-900 p-1.5 rounded-xl border border-slate-800 text-[11px] font-bold">
+            <button
+              type="button"
+              onClick={() => setFiltroPatioStatus('pendentes')}
+              className={`py-2 px-2 rounded-lg text-center transition-all ${
+                filtroPatioStatus === 'pendentes'
+                  ? 'bg-amber-500 text-slate-950 font-extrabold shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              ⏳ Pendentes ({qtdCargasPendentes})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFiltroPatioStatus('carregados')}
+              className={`py-2 px-2 rounded-lg text-center transition-all ${
+                filtroPatioStatus === 'carregados'
+                  ? 'bg-emerald-600 text-white font-extrabold shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              ✅ Já Carregados
+            </button>
+            <button
+              type="button"
+              onClick={() => setFiltroPatioStatus('todos')}
+              className={`py-2 px-2 rounded-lg text-center transition-all ${
+                filtroPatioStatus === 'todos'
+                  ? 'bg-slate-700 text-white font-extrabold shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Todos ({pedidos.filter((p) => p.tipo_operacao === 'venda').length})
+            </button>
           </div>
 
           {pedidosCarregamentoFuncionarios.length === 0 ? (
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-400 text-xs italic">
-              Nenhum carregamento agendado no momento. Quando um pré-pedido for confirmado pelo cliente e agendado, ele aparecerá aqui!
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center space-y-2 text-xs">
+              <p className="text-slate-300 font-bold">
+                Nenhum carregamento neste filtro ({filtroPatioStatus === 'pendentes' ? 'Pendentes' : 'Selecionado'}).
+              </p>
+              {filtroPatioStatus === 'pendentes' && (
+                <button
+                  type="button"
+                  onClick={() => setFiltroPatioStatus('todos')}
+                  className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 px-3 py-1.5 rounded-xl text-[11px] font-bold"
+                >
+                  Ver Todos os Carregamentos (Incluindo Já Carregados)
+                </button>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
@@ -1377,7 +1642,7 @@ export function FluxoPedidosCarregamento({
                     key={p.id}
                     className={`bg-slate-900 border rounded-2xl p-4 space-y-3 shadow-md ${
                       isCarregado
-                        ? 'border-emerald-700/50 opacity-90'
+                        ? 'border-emerald-700/50'
                         : isHoje
                         ? 'border-amber-500 ring-1 ring-amber-500/30'
                         : 'border-sky-500/40'
@@ -1399,7 +1664,7 @@ export function FluxoPedidosCarregamento({
                               ? '✅ JÁ CARREGADO'
                               : isHoje
                               ? '🔥 CARREGAR HOJE'
-                              : `📅 CARREGAR EM: ${p.data_carregamento || 'A definir'}`}
+                              : `⏳ PENDENTE • ${p.data_carregamento || 'A definir'}`}
                           </span>
                           {p.nome_funcionario && (
                             <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-semibold">
@@ -1407,45 +1672,117 @@ export function FluxoPedidosCarregamento({
                             </span>
                           )}
                         </div>
-                        <h3 className="font-bold text-white text-sm mt-1.5">{p.nome_cliente}</h3>
                       </div>
 
                       <div className="text-right text-[11px] font-mono text-slate-400">
-                        <div>Carga: {p.data_carregamento || hojeStr}</div>
+                        <div>Carga: {p.data_carregamento || p.data_compra}</div>
                         {p.data_entrega && <div>Entrega: {p.data_entrega}</div>}
                       </div>
                     </div>
 
-                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 grid grid-cols-2 gap-2 text-xs">
-                      <div>
-                        <span className="text-[10px] text-slate-400 block">Produto Solicitado:</span>
-                        <span className="font-bold text-emerald-400">{p.produto}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] text-slate-400 block">
-                          {isCarregado ? 'Peso / Sacos Carregados:' : 'Previsão p/ Preparar:'}
-                        </span>
-                        <span className="font-bold text-white">
-                          {p.toneladas_real != null
-                            ? `${p.toneladas_real}t`
-                            : p.quantidade || `${p.quantidade_toneladas_num || 10}t`}
-                          {p.sacos_real ? ` (${p.sacos_real} sacos)` : ''}
-                        </span>
-                      </div>
-                      <div className="col-span-2 pt-1 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
-                        <span className="text-amber-300 font-semibold flex items-center gap-1">
-                          <Truck className="w-3.5 h-3.5" />{' '}
-                          {motoristaObj
-                            ? `${motoristaObj.nome} (${motoristaObj.tipo_veiculo || 'Caminhão'})`
-                            : 'Cliente retira / Sem freteiro'}
-                        </span>
-                        {clienteObj?.endereco_fazenda && (
-                          <span className="text-slate-400 truncate max-w-[160px]">
-                            📍 {clienteObj.endereco_fazenda}
+                    {/* 1. PARA QUAL CLIENTE É, 2. QUANTIDADE DA CARGA, 3. QUEM VAI VIR BUSCAR */}
+                    <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 space-y-2 text-xs">
+                      <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
+                            <User className="w-3 h-3 text-emerald-400" /> 1. Para qual Cliente é:
                           </span>
-                        )}
+                          <span className="font-extrabold text-white text-sm block mt-0.5">
+                            {p.nome_cliente}
+                          </span>
+                          {clienteObj?.endereco_fazenda && (
+                            <span className="text-[11px] text-slate-400 block">
+                              📍 {clienteObj.endereco_fazenda}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 border-b border-slate-800/80 pb-2">
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">
+                            📦 2. Quantidade da Carga:
+                          </span>
+                          <span className="font-bold text-emerald-400 block">
+                            🌾 {p.produto}
+                          </span>
+                          <span className="font-bold text-white text-[11px]">
+                            Solicitado: {p.quantidade || `${p.quantidade_toneladas_num || 10}t`}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-slate-400 uppercase font-bold block">
+                            ⚖️ Peso / Sacos Carregados:
+                          </span>
+                          <span className="font-bold text-sky-300 block">
+                            {p.toneladas_real != null
+                              ? `${p.toneladas_real} toneladas`
+                              : 'Aguardando carga'}
+                          </span>
+                          {p.sacos_real != null && p.sacos_real > 0 && (
+                            <span className="text-[11px] text-amber-300 font-semibold block">
+                              🛍️ {p.sacos_real} sacos
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1">
+                          <Truck className="w-3 h-3 text-amber-400" /> 3. Quem vem buscar para o Frete:
+                        </span>
+                        <span className="text-amber-300 font-bold block mt-0.5">
+                          {motoristaObj
+                            ? `🚚 ${motoristaObj.nome} — ${motoristaObj.tipo_veiculo || 'Caminhão'} (${motoristaObj.capacidade_carga_toneladas || 10}t)`
+                            : p.tem_frete === false
+                            ? '🚜 Cliente retira com caminhão próprio no local'
+                            : '🚚 Motorista terceirizado (Em definição)'}
+                        </span>
                       </div>
                     </div>
+
+                    {/* Foto do Caminhão Carregado (quando confirmada) */}
+                    {p.foto_caminhao_carregado && (
+                      <div className="bg-emerald-950/30 border border-emerald-700/50 rounded-xl p-2.5 flex items-center justify-between gap-2.5">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <img
+                            src={p.foto_caminhao_carregado}
+                            alt={`Caminhão carregado - ${p.nome_cliente}`}
+                            onClick={() =>
+                              setFotoAmpliadaModal({
+                                url: p.foto_caminhao_carregado!,
+                                cliente: p.nome_cliente,
+                                data: p.data_confirmacao_carga,
+                              })
+                            }
+                            className="w-12 h-12 object-cover rounded-lg border border-emerald-500/60 cursor-pointer shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <span className="text-xs font-bold text-emerald-300 block">
+                              📸 Foto do Caminhão Carregado
+                            </span>
+                            {p.data_confirmacao_carga && (
+                              <span className="text-[10px] text-slate-400 block">
+                                Confirmado em {p.data_confirmacao_carga}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFotoAmpliadaModal({
+                              url: p.foto_caminhao_carregado!,
+                              cliente: p.nome_cliente,
+                              data: p.data_confirmacao_carga,
+                            })
+                          }
+                          className="bg-slate-800 hover:bg-slate-700 text-sky-300 px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shrink-0"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> Ver Foto
+                        </button>
+                      </div>
+                    )}
 
                     <button
                       type="button"
@@ -1456,11 +1793,11 @@ export function FluxoPedidosCarregamento({
                           : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
                       }`}
                     >
-                      <Scale className="w-4 h-4" />
+                      <Camera className="w-4 h-4" />
                       <span>
                         {isCarregado
-                          ? 'Editar Peso Real / Sacos / Extras da Carga'
-                          : '⚖️ Confirmar Carregamento (Peso Real, Sacos e Chapas)'}
+                          ? '📸 Editar Carga / Trocar Foto do Caminhão'
+                          : '📸 Confirmar Carga c/ Foto do Caminhão Carregado'}
                       </span>
                     </button>
                   </div>
@@ -1475,32 +1812,90 @@ export function FluxoPedidosCarregamento({
       {/* MODAL DE CONFERÊNCIA NA HORA DA CARGA (PESO REAL, SACOS, PREÇO E EXTRAS/CHAPAS) */}
       {/* ===================================================================== */}
       {modalCargaPedido && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-amber-500/50 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl my-8">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
-                <Scale className="w-5 h-5" />
-                <span>Fechamento na Hora da Carga</span>
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-slate-900 border border-amber-500/50 rounded-2xl max-w-md w-full max-h-[92dvh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Cabeçalho fixo */}
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3 shrink-0 bg-slate-900">
+              <div className="flex items-center gap-2 text-amber-400 font-bold text-sm min-w-0">
+                <Scale className="w-5 h-5 shrink-0" />
+                <span className="truncate">Fechamento na Hora da Carga</span>
               </div>
               <button
                 type="button"
                 onClick={() => setModalCargaPedido(null)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-white p-1 shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs">
-              <span className="font-bold text-white block">{modalCargaPedido.nome_cliente}</span>
-              <span className="text-[11px] text-slate-400">
-                Pré-Pedido: {modalCargaPedido.produto} ({modalCargaPedido.quantidade})
-              </span>
-            </div>
+            {/* Corpo rolável */}
+            <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-3 text-xs">
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs">
+                <span className="font-bold text-white block">{modalCargaPedido.nome_cliente}</span>
+                <span className="text-[11px] text-slate-400">
+                  Pré-Pedido: {modalCargaPedido.produto} ({modalCargaPedido.quantidade})
+                </span>
+              </div>
 
-            <div className="space-y-3 text-xs">
-              {/* 1. Peso Real em Toneladas e Quantidade de Sacos */}
-              <div className="grid grid-cols-2 gap-2.5">
+              {/* FOTO DO CAMINHÃO CARREGADO */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] text-amber-300 font-bold block">
+                  📸 Foto do Caminhão Carregado (Confirmação de Carga / Entrega)
+                </label>
+                <input
+                  ref={inputFotoCargaRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleSelecionarFotoModalCarga}
+                  className="hidden"
+                />
+
+                {cargaForm.fotoCaminhao ? (
+                  <div className="bg-slate-950 border border-emerald-500/50 rounded-xl p-2 space-y-2 text-center">
+                    <img
+                      src={cargaForm.fotoCaminhao}
+                      alt="Foto do caminhão carregado"
+                      className="w-full max-h-44 object-cover rounded-lg border border-slate-800 mx-auto"
+                    />
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => inputFotoCargaRef.current?.click()}
+                        className="bg-slate-800 hover:bg-slate-700 text-amber-300 px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1"
+                      >
+                        <Camera className="w-3 h-3" /> Trocar Foto
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCargaForm((prev) => ({ ...prev, fotoCaminhao: null }))}
+                        className="bg-red-950/60 hover:bg-red-900 text-red-300 px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3 h-3" /> Remover
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => inputFotoCargaRef.current?.click()}
+                    disabled={processandoFotoCarga}
+                    className="w-full bg-slate-950 hover:bg-slate-900 border-2 border-dashed border-amber-500/50 rounded-xl p-3.5 flex flex-col items-center justify-center gap-1 text-amber-300 transition-all cursor-pointer"
+                  >
+                    <Camera className="w-6 h-6 text-amber-400" />
+                    <span className="font-bold text-[11px]">
+                      {processandoFotoCarga
+                        ? 'Processando foto...'
+                        : '📸 Tirar Foto do Caminhão Carregado / Escolher da Galeria'}
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              <div className="space-y-3 text-xs">
+                {/* 1. Peso Real em Toneladas e Quantidade de Sacos */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div>
                   <label className="text-[11px] text-emerald-300 font-bold block mb-1">
                     ⚖️ Toneladas Finais (Real)
@@ -1703,9 +2098,11 @@ export function FluxoPedidosCarregamento({
                   </div>
                 );
               })()}
+              </div>
             </div>
 
-            <div className="flex gap-2 pt-2 border-t border-slate-800">
+            {/* Rodapé fixo */}
+            <div className="flex gap-2 px-4 py-3 border-t border-slate-800 bg-slate-900 shrink-0">
               <button
                 type="button"
                 onClick={() => setModalCargaPedido(null)}
@@ -1721,6 +2118,44 @@ export function FluxoPedidosCarregamento({
                 <Check className="w-4 h-4" /> Confirmar Carga Final
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PARA AMPLIAR A FOTO DO CAMINHÃO CARREGADO */}
+      {fotoAmpliadaModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setFotoAmpliadaModal(null)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-3 space-y-2 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="font-bold text-xs text-white block">
+                  📸 Caminhão Carregado — {fotoAmpliadaModal.cliente}
+                </span>
+                {fotoAmpliadaModal.data && (
+                  <span className="text-[10px] text-emerald-400 block">
+                    Confirmado em {fotoAmpliadaModal.data}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setFotoAmpliadaModal(null)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <img
+              src={fotoAmpliadaModal.url}
+              alt="Caminhão carregado"
+              className="w-full max-h-[75dvh] object-contain rounded-xl bg-black"
+            />
           </div>
         </div>
       )}

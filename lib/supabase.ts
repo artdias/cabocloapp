@@ -102,6 +102,8 @@ export interface Pedido {
   valor_base_produtos?: number | null;
   custos_extras?: CustoExtraPedido[] | null;
   estoque_baixado?: boolean | null;
+  foto_caminhao_carregado?: string | null;
+  data_confirmacao_carga?: string | null;
   status_financeiro: StatusFinanceiro;
   tipo_operacao: 'venda' | 'compra';
   observacao?: string | null;
@@ -341,6 +343,8 @@ export async function salvarPedidoNoBanco(pedido: Pedido): Promise<boolean> {
     valor_base_produtos: pedido.valor_base_produtos ?? null,
     custos_extras: pedido.custos_extras || null,
     estoque_baixado: pedido.estoque_baixado ?? false,
+    foto_caminhao_carregado: pedido.foto_caminhao_carregado || null,
+    data_confirmacao_carga: pedido.data_confirmacao_carga || null,
   };
 
   const payload = {
@@ -471,6 +475,10 @@ export function parsePedidosDoBanco(rows: any[]): Pedido[] {
           : anterior?.valor_base_produtos ?? null,
       custos_extras: meta.custos_extras ?? anterior?.custos_extras ?? null,
       estoque_baixado: meta.estoque_baixado ?? anterior?.estoque_baixado ?? false,
+      foto_caminhao_carregado:
+        meta.foto_caminhao_carregado ?? anterior?.foto_caminhao_carregado ?? null,
+      data_confirmacao_carga:
+        meta.data_confirmacao_carga ?? anterior?.data_confirmacao_carga ?? null,
       status_financeiro: row.status_financeiro || 'pendente',
       tipo_operacao: row.tipo_operacao || 'venda',
       observacao: cleanObs,
@@ -520,4 +528,41 @@ export async function carregarEstoqueDoBanco(): Promise<ItemEstoque[] | null> {
     }
   } catch {}
   return null;
+}
+
+export function comprimirFotoCaminhao(file: File, maxWidth = 800, quality = 0.65): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (!dataUrl) {
+        reject(new Error('Falha ao ler arquivo de imagem'));
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(dataUrl);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL('image/jpeg', quality);
+        resolve(compressed);
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    };
+    reader.onerror = () => reject(new Error('Erro ao processar foto'));
+    reader.readAsDataURL(file);
+  });
 }

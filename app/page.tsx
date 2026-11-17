@@ -3246,21 +3246,21 @@ export default function CabocloAgroCRM() {
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+            <div className="grid grid-cols-3 gap-1.5 text-xs">
               {[
-                { id: 'todos', label: 'Todos' },
+                { id: 'todos', label: '📋 Todos' },
                 { id: 'cliente', label: '👥 Clientes' },
-                { id: 'possibilidade', label: '❓ Possibilidades' },
-                { id: 'terceiro', label: '🚚 Terceiros' },
-                { id: 'fornecedor', label: '🏢 Fornecedores' },
-                { id: 'funcionario', label: '👨‍🌾 Funcionários' },
+                { id: 'possibilidade', label: '🌱 Prospects' },
+                { id: 'terceiro', label: '🚚 Freteiros' },
+                { id: 'fornecedor', label: '🏢 Fornec.' },
+                { id: 'funcionario', label: '👨‍🌾 Equipe' },
               ].map((item) => (
                 <button
                   key={item.id}
                   onClick={() => setFiltroContato(item.id)}
-                  className={`px-3 py-1.5 rounded-full whitespace-nowrap font-medium border transition-all ${
+                  className={`py-2 px-2 rounded-xl text-center font-bold border transition-all truncate ${
                     filtroContato === item.id
-                      ? 'bg-emerald-500 text-slate-950 font-bold border-emerald-400'
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow'
                       : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
                   }`}
                 >
@@ -4043,14 +4043,15 @@ export default function CabocloAgroCRM() {
         </div>
       )}
 
-      {/* MODAL DE CADASTRO / EDIÇÃO MANUAL DE REGISTROS */}
+      {/* MODAL DE CADASTRO / EDIÇÃO MANUAL DE REGISTROS (RESPONSIVO COM CABEÇALHO E RODAPÉ FIXOS) */}
       {isManualModalOpen && formData && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-5 space-y-3.5 shadow-2xl my-8">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
-                {editingId ? <Edit3 className="w-5 h-5 text-amber-400" /> : <UserPlus className="w-5 h-5" />}
-                <span>
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full max-h-[92dvh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Cabeçalho fixo do modal */}
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3 shrink-0 bg-slate-900">
+              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm min-w-0">
+                {editingId ? <Edit3 className="w-5 h-5 text-amber-400 shrink-0" /> : <UserPlus className="w-5 h-5 shrink-0" />}
+                <span className="truncate">
                   {editingId ? 'Editar Cadastro Existente' : formData.tipo === 'terceiro' ? 'Novo Terceiro / Freteiro' : 'Novo Cadastro Manual'}
                 </span>
               </div>
@@ -4060,259 +4061,265 @@ export default function CabocloAgroCRM() {
                   setAvisoValidacaoCadastro(null);
                   setIsManualModalOpen(false);
                 }}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-white p-1 shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {avisoValidacaoCadastro && (
-              <div className="bg-red-950/90 border border-red-500 text-red-200 rounded-xl p-2.5 text-xs flex items-start gap-2 animate-pulse">
-                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                <span className="font-semibold">{avisoValidacaoCadastro}</span>
-              </div>
-            )}
+            {/* Corpo rolável do modal */}
+            <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-3">
+              {avisoValidacaoCadastro && (
+                <div className="bg-red-950/90 border border-red-500 text-red-200 rounded-xl p-2.5 text-xs flex items-start gap-2 animate-pulse">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <span className="font-semibold">{avisoValidacaoCadastro}</span>
+                </div>
+              )}
 
-            <div className="grid grid-cols-2 gap-2.5 text-xs">
-              <div>
-                <label className="text-[11px] text-slate-400 font-semibold block mb-1">Tipo de Registro</label>
-                <select
-                  value={formData.tipo}
-                  onChange={(e) => {
-                    setErrosCadastro({});
-                    setAvisoValidacaoCadastro(null);
-                    setFormData({ ...formData, tipo: e.target.value as TipoEntidade });
-                  }}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
-                >
-                  <option value="cliente">👤 Cliente</option>
-                  <option value="terceiro">🚚 Terceiro / Freteiro</option>
-                  <option value="funcionario">👨‍🌾 Funcionário</option>
-                  <option value="fornecedor">🏢 Fornecedor</option>
-                </select>
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                <div>
+                  <label className="text-[11px] text-slate-400 font-semibold block mb-1">Tipo de Registro</label>
+                  <select
+                    value={formData.tipo}
+                    onChange={(e) => {
+                      setErrosCadastro({});
+                      setAvisoValidacaoCadastro(null);
+                      setFormData({ ...formData, tipo: e.target.value as TipoEntidade });
+                    }}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                  >
+                    <option value="cliente">👤 Cliente</option>
+                    <option value="terceiro">🚚 Terceiro / Freteiro</option>
+                    <option value="funcionario">👨‍🌾 Funcionário</option>
+                    <option value="fornecedor">🏢 Fornecedor</option>
+                  </select>
+                </div>
 
-              <div>
-                <label className="text-[11px] text-slate-400 font-semibold block mb-1">Classificação CRM</label>
-                <select
-                  value={formData.status_crm}
-                  onChange={(e) => setFormData({ ...formData, status_crm: e.target.value as StatusCRM })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
-                >
-                  <option value="possibilidade">❓ Possibilidade (Prospect)</option>
-                  <option value="cliente_ativo">✅ Ativo / Disponível</option>
-                  <option value="parceiro">⭐ Parceiro</option>
-                </select>
-              </div>
+                <div>
+                  <label className="text-[11px] text-slate-400 font-semibold block mb-1">Classificação CRM</label>
+                  <select
+                    value={formData.status_crm}
+                    onChange={(e) => setFormData({ ...formData, status_crm: e.target.value as StatusCRM })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                  >
+                    <option value="possibilidade">❓ Possibilidade (Prospect)</option>
+                    <option value="cliente_ativo">✅ Ativo / Disponível</option>
+                    <option value="parceiro">⭐ Parceiro</option>
+                  </select>
+                </div>
 
-              <div className="col-span-2">
-                <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.nome ? 'text-red-400' : 'text-slate-300'}`}>
-                  Nome / Fazenda / Motorista *
-                </label>
-                <input
-                  ref={manualNomeRef}
-                  type="text"
-                  value={formData.nome}
-                  onChange={(e) => {
-                    limparErroCampoCadastro('nome');
-                    setFormData({ ...formData, nome: e.target.value });
-                  }}
-                  placeholder="Ex: João Paulo ou Sebastião Fretes"
-                  className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
-                    errosCadastro.nome
-                      ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
-                      : 'border-slate-700 focus:border-emerald-500'
-                  }`}
-                />
-                {errosCadastro.nome && (
-                  <span className="text-[10px] text-red-400 font-semibold block mt-1">
-                    ⚠️ {errosCadastro.nome}
-                  </span>
-                )}
-              </div>
-
-              {formData.tipo === 'cliente' && (
-                <>
-                  <div className="col-span-2">
-                    <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.endereco_fazenda ? 'text-red-400' : 'text-slate-300'}`}>
-                      Endereço da Fazenda *
-                    </label>
-                    <input
-                      ref={manualEnderecoRef}
-                      type="text"
-                      value={formData.endereco_fazenda}
-                      onChange={(e) => {
-                        limparErroCampoCadastro('endereco_fazenda');
-                        setFormData({ ...formData, endereco_fazenda: e.target.value });
-                      }}
-                      placeholder="Ex: BR-101 Km 45, Linhares - ES"
-                      className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
-                        errosCadastro.endereco_fazenda
-                          ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
-                          : 'border-slate-700 focus:border-emerald-500'
-                      }`}
-                    />
-                    {errosCadastro.endereco_fazenda && (
-                      <span className="text-[10px] text-red-400 font-semibold block mt-1">
-                        ⚠️ {errosCadastro.endereco_fazenda}
-                      </span>
-                    )}
-                  </div>
-
-                  <SeletorAlfineteMapa
-                    endereco={formData.endereco_fazenda}
-                    latitude={formData.latitude}
-                    longitude={formData.longitude}
-                    onChangeCoords={(lat, lng) =>
-                      setFormData((prev) => (prev ? { ...prev, latitude: lat, longitude: lng } : prev))
-                    }
+                <div className="sm:col-span-2">
+                  <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.nome ? 'text-red-400' : 'text-slate-300'}`}>
+                    Nome / Fazenda / Motorista *
+                  </label>
+                  <input
+                    ref={manualNomeRef}
+                    type="text"
+                    value={formData.nome}
+                    onChange={(e) => {
+                      limparErroCampoCadastro('nome');
+                      setFormData({ ...formData, nome: e.target.value });
+                    }}
+                    placeholder="Ex: João Paulo ou Sebastião Fretes"
+                    className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                      errosCadastro.nome
+                        ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                        : 'border-slate-700 focus:border-emerald-500'
+                    }`}
                   />
+                  {errosCadastro.nome && (
+                    <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                      ⚠️ {errosCadastro.nome}
+                    </span>
+                  )}
+                </div>
 
-                  <div>
-                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Qtd. de Animais</label>
-                    <input
-                      type="text"
-                      value={formData.quantidade_animais}
-                      onChange={(e) => setFormData({ ...formData, quantidade_animais: e.target.value })}
-                      placeholder="Ex: 120 cabeças de gado"
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
-                    />
-                  </div>
-                </>
-              )}
+                {formData.tipo === 'cliente' && (
+                  <>
+                    <div className="sm:col-span-2">
+                      <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.endereco_fazenda ? 'text-red-400' : 'text-slate-300'}`}>
+                        Endereço da Fazenda *
+                      </label>
+                      <input
+                        ref={manualEnderecoRef}
+                        type="text"
+                        value={formData.endereco_fazenda}
+                        onChange={(e) => {
+                          limparErroCampoCadastro('endereco_fazenda');
+                          setFormData({ ...formData, endereco_fazenda: e.target.value });
+                        }}
+                        placeholder="Ex: BR-101 Km 45, Linhares - ES"
+                        className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                          errosCadastro.endereco_fazenda
+                            ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                            : 'border-slate-700 focus:border-emerald-500'
+                        }`}
+                      />
+                      {errosCadastro.endereco_fazenda && (
+                        <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                          ⚠️ {errosCadastro.endereco_fazenda}
+                        </span>
+                      )}
+                    </div>
 
-              {formData.tipo === 'terceiro' && (
-                <>
-                  <div>
-                    <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.capacidade_carga_toneladas ? 'text-red-400' : 'text-slate-300'}`}>
-                      Capacidade (Toneladas) *
-                    </label>
-                    <input
-                      ref={manualCapacidadeRef}
-                      type="number"
-                      value={formData.capacidade_carga_toneladas}
-                      onChange={(e) => {
-                        limparErroCampoCadastro('capacidade_carga_toneladas');
-                        setFormData({ ...formData, capacidade_carga_toneladas: e.target.value });
-                      }}
-                      placeholder="Ex: 14"
-                      className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
-                        errosCadastro.capacidade_carga_toneladas
-                          ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
-                          : 'border-slate-700 focus:border-amber-500'
-                      }`}
-                    />
-                    {errosCadastro.capacidade_carga_toneladas && (
-                      <span className="text-[10px] text-red-400 font-semibold block mt-1">
-                        ⚠️ {errosCadastro.capacidade_carga_toneladas}
-                      </span>
-                    )}
-                  </div>
+                    <div className="sm:col-span-2">
+                      <SeletorAlfineteMapa
+                        endereco={formData.endereco_fazenda}
+                        latitude={formData.latitude}
+                        longitude={formData.longitude}
+                        onChangeCoords={(lat, lng) =>
+                          setFormData((prev) => (prev ? { ...prev, latitude: lat, longitude: lng } : prev))
+                        }
+                      />
+                    </div>
 
-                  <div>
-                    <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.tipo_veiculo ? 'text-red-400' : 'text-slate-300'}`}>
-                      Tipo de Veículo / Caminhão *
-                    </label>
-                    <input
-                      ref={manualVeiculoRef}
-                      type="text"
-                      value={formData.tipo_veiculo}
-                      onChange={(e) => {
-                        limparErroCampoCadastro('tipo_veiculo');
-                        setFormData({ ...formData, tipo_veiculo: e.target.value });
-                      }}
-                      placeholder="Ex: Truck 3 Eixos, Carreta"
-                      className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
-                        errosCadastro.tipo_veiculo
-                          ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
-                          : 'border-slate-700 focus:border-amber-500'
-                      }`}
-                    />
-                    {errosCadastro.tipo_veiculo && (
-                      <span className="text-[10px] text-red-400 font-semibold block mt-1">
-                        ⚠️ {errosCadastro.tipo_veiculo}
-                      </span>
-                    )}
-                  </div>
-                </>
-              )}
-
-              <div>
-                <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.telefone ? 'text-red-400' : 'text-slate-300'}`}>
-                  Telefone / WhatsApp *
-                </label>
-                <input
-                  ref={manualTelefoneRef}
-                  type="text"
-                  value={formData.telefone}
-                  onChange={(e) => {
-                    limparErroCampoCadastro('telefone');
-                    setFormData({ ...formData, telefone: e.target.value });
-                  }}
-                  placeholder="Ex: 27999887766"
-                  className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
-                    errosCadastro.telefone
-                      ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
-                      : 'border-slate-700 focus:border-emerald-500'
-                  }`}
-                />
-                {errosCadastro.telefone && (
-                  <span className="text-[10px] text-red-400 font-semibold block mt-1">
-                    ⚠️ {errosCadastro.telefone}
-                  </span>
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Qtd. de Animais</label>
+                      <input
+                        type="text"
+                        value={formData.quantidade_animais}
+                        onChange={(e) => setFormData({ ...formData, quantidade_animais: e.target.value })}
+                        placeholder="Ex: 120 cabeças de gado"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                      />
+                    </div>
+                  </>
                 )}
-              </div>
 
-              {formData.tipo !== 'terceiro' && (
-                <>
-                  <div>
-                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Valor Total (R$)</label>
-                    <input
-                      type="number"
-                      value={formData.valor_total}
-                      onChange={(e) => setFormData({ ...formData, valor_total: e.target.value })}
-                      placeholder="Ex: 4500.00"
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
-                    />
-                  </div>
+                {formData.tipo === 'terceiro' && (
+                  <>
+                    <div>
+                      <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.capacidade_carga_toneladas ? 'text-red-400' : 'text-slate-300'}`}>
+                        Capacidade (Toneladas) *
+                      </label>
+                      <input
+                        ref={manualCapacidadeRef}
+                        type="number"
+                        value={formData.capacidade_carga_toneladas}
+                        onChange={(e) => {
+                          limparErroCampoCadastro('capacidade_carga_toneladas');
+                          setFormData({ ...formData, capacidade_carga_toneladas: e.target.value });
+                        }}
+                        placeholder="Ex: 14"
+                        className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                          errosCadastro.capacidade_carga_toneladas
+                            ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                            : 'border-slate-700 focus:border-amber-500'
+                        }`}
+                      />
+                      {errosCadastro.capacidade_carga_toneladas && (
+                        <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                          ⚠️ {errosCadastro.capacidade_carga_toneladas}
+                        </span>
+                      )}
+                    </div>
 
-                  <div>
-                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Produto</label>
-                    <input
-                      type="text"
-                      value={formData.produto}
-                      onChange={(e) => setFormData({ ...formData, produto: e.target.value })}
-                      placeholder="Ex: Silagem de Milho"
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
-                    />
-                  </div>
+                    <div>
+                      <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.tipo_veiculo ? 'text-red-400' : 'text-slate-300'}`}>
+                        Tipo de Veículo / Caminhão *
+                      </label>
+                      <input
+                        ref={manualVeiculoRef}
+                        type="text"
+                        value={formData.tipo_veiculo}
+                        onChange={(e) => {
+                          limparErroCampoCadastro('tipo_veiculo');
+                          setFormData({ ...formData, tipo_veiculo: e.target.value });
+                        }}
+                        placeholder="Ex: Truck 3 Eixos, Carreta"
+                        className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                          errosCadastro.tipo_veiculo
+                            ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                            : 'border-slate-700 focus:border-amber-500'
+                        }`}
+                      />
+                      {errosCadastro.tipo_veiculo && (
+                        <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                          ⚠️ {errosCadastro.tipo_veiculo}
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
 
-                  <div>
-                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Quantidade</label>
-                    <input
-                      type="text"
-                      value={formData.quantidade}
-                      onChange={(e) => setFormData({ ...formData, quantidade: e.target.value })}
-                      placeholder="Ex: 10 toneladas"
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
-                    />
-                  </div>
-                </>
-              )}
+                <div>
+                  <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.telefone ? 'text-red-400' : 'text-slate-300'}`}>
+                    Telefone / WhatsApp *
+                  </label>
+                  <input
+                    ref={manualTelefoneRef}
+                    type="text"
+                    value={formData.telefone}
+                    onChange={(e) => {
+                      limparErroCampoCadastro('telefone');
+                      setFormData({ ...formData, telefone: e.target.value });
+                    }}
+                    placeholder="Ex: 27999887766"
+                    className={`w-full bg-slate-950 border rounded-lg p-2 text-slate-100 outline-none transition-all ${
+                      errosCadastro.telefone
+                        ? 'border-red-500 ring-2 ring-red-500/40 bg-red-950/20'
+                        : 'border-slate-700 focus:border-emerald-500'
+                    }`}
+                  />
+                  {errosCadastro.telefone && (
+                    <span className="text-[10px] text-red-400 font-semibold block mt-1">
+                      ⚠️ {errosCadastro.telefone}
+                    </span>
+                  )}
+                </div>
 
-              <div className="col-span-2">
-                <label className="text-[11px] text-slate-400 font-semibold block mb-1">Observações</label>
-                <textarea
-                  rows={2}
-                  value={formData.observacao}
-                  onChange={(e) => setFormData({ ...formData, observacao: e.target.value })}
-                  placeholder="Notas adicionais..."
-                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none resize-none"
-                />
+                {formData.tipo !== 'terceiro' && (
+                  <>
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Valor Total (R$)</label>
+                      <input
+                        type="number"
+                        value={formData.valor_total}
+                        onChange={(e) => setFormData({ ...formData, valor_total: e.target.value })}
+                        placeholder="Ex: 4500.00"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Produto</label>
+                      <input
+                        type="text"
+                        value={formData.produto}
+                        onChange={(e) => setFormData({ ...formData, produto: e.target.value })}
+                        placeholder="Ex: Silagem de Milho"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Quantidade</label>
+                      <input
+                        type="text"
+                        value={formData.quantidade}
+                        onChange={(e) => setFormData({ ...formData, quantidade: e.target.value })}
+                        placeholder="Ex: 10 toneladas"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] text-slate-400 font-semibold block mb-1">Observações</label>
+                  <textarea
+                    rows={2}
+                    value={formData.observacao}
+                    onChange={(e) => setFormData({ ...formData, observacao: e.target.value })}
+                    placeholder="Notas adicionais..."
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none resize-none"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="flex gap-2 pt-2">
+            {/* Rodapé fixo do modal */}
+            <div className="flex gap-2 px-4 py-3 border-t border-slate-800 bg-slate-900 shrink-0">
               {editingId && (
                 <button
                   onClick={() => excluirContato(editingId)}
@@ -4456,14 +4463,17 @@ export default function CabocloAgroCRM() {
         </div>
       )}
 
-      {/* MODAL NOVO PEDIDO COM SELEÇÃO DE CLIENTE E ITENS DA VENDA */}
+      {/* MODAL NOVO PRÉ-PEDIDO / PEDIDO RESPONSIVO (CABEÇALHO E RODAPÉ SEMPRE VISÍVEIS) */}
       {isNovoPedidoModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl my-8">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
-                <ShoppingBag className="w-5 h-5 text-emerald-400" />
-                <span>{editingPedidoId ? 'Editar Pedido de Venda' : 'Criar Novo Pedido de Venda'}</span>
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4">
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-md w-full max-h-[92dvh] flex flex-col shadow-2xl overflow-hidden">
+            {/* Cabeçalho fixo do modal */}
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3 shrink-0 bg-slate-900">
+              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm min-w-0">
+                <ShoppingBag className="w-5 h-5 text-emerald-400 shrink-0" />
+                <span className="truncate">
+                  {editingPedidoId ? 'Editar Pré-Pedido / Pedido' : 'Criar Novo Pré-Pedido'}
+                </span>
               </div>
               <button
                 onClick={() => {
@@ -4471,20 +4481,21 @@ export default function CabocloAgroCRM() {
                   setAvisoValidacaoPedido(null);
                   setIsNovoPedidoModalOpen(false);
                 }}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-white p-1 shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {avisoValidacaoPedido && (
-              <div className="bg-red-950/90 border border-red-500 text-red-200 rounded-xl p-2.5 text-xs flex items-start gap-2 animate-pulse">
-                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                <span className="font-semibold">{avisoValidacaoPedido}</span>
-              </div>
-            )}
+            {/* Corpo rolável interno do modal */}
+            <div className="flex-1 overflow-y-auto min-h-0 p-4 space-y-3 text-xs">
+              {avisoValidacaoPedido && (
+                <div className="bg-red-950/90 border border-red-500 text-red-200 rounded-xl p-2.5 text-xs flex items-start gap-2 animate-pulse">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <span className="font-semibold">{avisoValidacaoPedido}</span>
+                </div>
+              )}
 
-            <div className="space-y-3 text-xs">
               {/* Seleção do Cliente */}
               <div>
                 <label className={`text-[11px] font-semibold block mb-1 ${errosPedido.clienteId ? 'text-red-400' : 'text-slate-300'}`}>
@@ -4526,7 +4537,7 @@ export default function CabocloAgroCRM() {
 
               {/* Itens do Pedido (Produtos do Estoque) */}
               <div className="space-y-2 border-t border-slate-800 pt-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <label className="text-[11px] text-slate-300 font-semibold block">2. Itens da Venda (Estoque) *</label>
                   <button
                     onClick={adicionarLinhaItemPedido}
@@ -4548,7 +4559,7 @@ export default function CabocloAgroCRM() {
                         temErroItem ? 'border-red-500 ring-2 ring-red-500/30' : 'border-slate-800'
                       }`}
                     >
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
                         <select
                           value={itemForm.estoqueId}
                           onChange={(e) => {
@@ -4556,7 +4567,7 @@ export default function CabocloAgroCRM() {
                             nov[idx].estoqueId = e.target.value;
                             setNovoPedidoForm({ ...novoPedidoForm, itens: nov });
                           }}
-                          className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100 text-xs outline-none"
+                          className="flex-1 min-w-0 bg-slate-900 border border-slate-700 rounded-lg p-2 text-slate-100 text-xs outline-none truncate"
                         >
                           {estoque.map((est) => (
                             <option key={est.id} value={est.id}>
@@ -4568,7 +4579,7 @@ export default function CabocloAgroCRM() {
                         {novoPedidoForm.itens.length > 1 && (
                           <button
                             onClick={() => removerLinhaItemPedido(idx)}
-                            className="text-red-400 hover:text-red-300 p-1"
+                            className="text-red-400 hover:text-red-300 p-1 shrink-0"
                             title="Remover item"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -4576,7 +4587,7 @@ export default function CabocloAgroCRM() {
                         )}
                       </div>
 
-                      <div className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center justify-between gap-2 text-xs flex-wrap">
                         <div className="flex items-center gap-1">
                           <label className={`text-[10px] font-semibold ${temErroItem ? 'text-red-400' : 'text-slate-400'}`}>
                             Qtd *:
@@ -4619,48 +4630,49 @@ export default function CabocloAgroCRM() {
                 })}
               </div>
 
-              {/* Terceiro / Transportador */}
-              <div className="border-t border-slate-800 pt-2">
-                <label className="text-[11px] text-slate-300 font-semibold block mb-1">3. Freteiro / Transportador (Opcional)</label>
-                <select
-                  value={novoPedidoForm.terceiroId}
-                  onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, terceiroId: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-slate-100 outline-none"
-                >
-                  <option value="">-- Sem Freteiro / Retirada no Local --</option>
-                  {terceirosTransportadores.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      🚚 {t.nome} ({t.capacidade_carga_toneladas || 10}t - {t.tipo_veiculo})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Terceiro / Transportador e Previsão em Grid Responsivo */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 border-t border-slate-800 pt-2">
+                <div>
+                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">3. Freteiro / Transportador (Opc.)</label>
+                  <select
+                    value={novoPedidoForm.terceiroId}
+                    onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, terceiroId: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-slate-100 outline-none text-xs"
+                  >
+                    <option value="">-- Sem Freteiro / Retirada --</option>
+                    {terceirosTransportadores.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        🚚 {t.nome} ({t.capacidade_carga_toneladas || 10}t - {t.tipo_veiculo})
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              {/* Previsão Fim Estoque Cliente */}
-              <div>
-                <label className="text-[11px] text-slate-300 font-semibold block mb-1">4. Previsão de Duração na Fazenda</label>
-                <select
-                  value={novoPedidoForm.diasEstoqueFim}
-                  onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, diasEstoqueFim: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-slate-100 outline-none"
-                >
-                  <option value="15">Estoque dura 15 dias</option>
-                  <option value="30">Estoque dura 30 dias (1 mês)</option>
-                  <option value="45">Estoque dura 45 dias</option>
-                  <option value="60">Estoque dura 60 dias (2 meses)</option>
-                </select>
+                <div>
+                  <label className="text-[11px] text-slate-300 font-semibold block mb-1">4. Duração na Fazenda</label>
+                  <select
+                    value={novoPedidoForm.diasEstoqueFim}
+                    onChange={(e) => setNovoPedidoForm({ ...novoPedidoForm, diasEstoqueFim: e.target.value })}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-xl p-2 text-slate-100 outline-none text-xs"
+                  >
+                    <option value="15">Estoque dura 15 dias</option>
+                    <option value="30">Estoque dura 30 dias (1 mês)</option>
+                    <option value="45">Estoque dura 45 dias</option>
+                    <option value="60">Estoque dura 60 dias (2 meses)</option>
+                  </select>
+                </div>
               </div>
 
               {/* 5. Condições de Pagamento, Parcelas e Adiantamento (Opcional) */}
               <div className="border-t border-slate-800 pt-2.5 space-y-2.5">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <label className="text-[11px] text-amber-300 font-bold block">
                     5. Pagamento, Parcelas e Adiantamento (Opcional)
                   </label>
                   <span className="text-[9px] text-slate-400 italic">Nenhum campo obrigatório</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label className="text-[10px] text-slate-400 block mb-1">Situação do Pagamento</label>
                     <select
@@ -4720,7 +4732,7 @@ export default function CabocloAgroCRM() {
                     />
                   </div>
 
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <label className="text-[10px] text-slate-400 block mb-1">
                       Que dia ficou de pagar? (Observação de Vencimento / Parcelas)
                     </label>
@@ -4749,11 +4761,11 @@ export default function CabocloAgroCRM() {
                   if (adiant > 0 || nParc > 1) {
                     return (
                       <div className="bg-slate-950 border border-amber-500/30 rounded-xl p-2.5 text-[11px] space-y-1">
-                        <div className="flex justify-between text-slate-300">
+                        <div className="flex justify-between text-slate-300 flex-wrap gap-1">
                           <span>Total do Pedido: R$ {totalItensModal.toFixed(2)}</span>
                           {adiant > 0 && <span className="text-emerald-400">Adiantado: R$ {adiant.toFixed(2)}</span>}
                         </div>
-                        <div className="flex justify-between font-bold text-amber-300">
+                        <div className="flex justify-between font-bold text-amber-300 flex-wrap gap-1">
                           <span>Falta Pagar: R$ {restante.toFixed(2)}</span>
                           {nParc > 1 && (
                             <span className="text-sky-300">
@@ -4769,7 +4781,8 @@ export default function CabocloAgroCRM() {
               </div>
             </div>
 
-            <div className="flex gap-2 pt-2 border-t border-slate-800">
+            {/* Rodapé fixo do modal (sempre visível) */}
+            <div className="flex gap-2 px-4 py-3 border-t border-slate-800 bg-slate-900 shrink-0">
               <button
                 onClick={() => {
                   setErrosPedido({});
@@ -4785,7 +4798,7 @@ export default function CabocloAgroCRM() {
                 disabled={isSaving}
                 className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
               >
-                <Check className="w-4 h-4" /> {isSaving ? 'Salvando...' : editingPedidoId ? 'Salvar Edição' : 'Concluir Pedido'}
+                <Check className="w-4 h-4" /> {isSaving ? 'Salvando...' : editingPedidoId ? 'Salvar Edição' : 'Concluir Pré-Pedido'}
               </button>
             </div>
           </div>
