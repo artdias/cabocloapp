@@ -35,6 +35,8 @@ export interface Contato {
   cidade?: string | null;
   fazenda?: string | null;
   endereco_fazenda?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   quantidade_animais?: number | string | null;
   capacidade_carga_toneladas?: number | null; // Para Terceiros/Transportadores
   tipo_veiculo?: string | null; // Ex: Toco, Truck, Carreta
@@ -144,6 +146,8 @@ export async function salvarContatoNoBanco(contato: Contato): Promise<boolean> {
     deleted: false,
     updated_at: new Date().toISOString(),
     endereco_fazenda: contato.endereco_fazenda || null,
+    latitude: contato.latitude ?? null,
+    longitude: contato.longitude ?? null,
     quantidade_animais: contato.quantidade_animais || null,
     capacidade_carga_toneladas: contato.capacidade_carga_toneladas ?? null,
     tipo_veiculo: contato.tipo_veiculo || null,
@@ -229,6 +233,19 @@ export function parseContatosDoBanco(rows: any[]): Contato[] {
     }
 
     const anterior = mapa.get(entityId);
+    const defaultLat =
+      entityId === '11111111-1111-4111-8111-111111111101'
+        ? -20.4285
+        : entityId === '11111111-1111-4111-8111-111111111102'
+        ? -19.3911
+        : null;
+    const defaultLng =
+      entityId === '11111111-1111-4111-8111-111111111101'
+        ? -40.328
+        : entityId === '11111111-1111-4111-8111-111111111102'
+        ? -40.0722
+        : null;
+
     mapa.set(entityId, {
       id: entityId,
       tipo: row.tipo || 'cliente',
@@ -238,6 +255,18 @@ export function parseContatosDoBanco(rows: any[]): Contato[] {
       cidade: row.cidade ?? extra.cidade ?? null,
       fazenda: null,
       endereco_fazenda: row.endereco_fazenda ?? extra.endereco_fazenda ?? null,
+      latitude:
+        row.latitude != null
+          ? Number(row.latitude)
+          : extra.latitude != null
+          ? Number(extra.latitude)
+          : anterior?.latitude ?? defaultLat,
+      longitude:
+        row.longitude != null
+          ? Number(row.longitude)
+          : extra.longitude != null
+          ? Number(extra.longitude)
+          : anterior?.longitude ?? defaultLng,
       quantidade_animais: row.quantidade_animais ?? extra.quantidade_animais ?? null,
       capacidade_carga_toneladas:
         row.capacidade_carga_toneladas ?? extra.capacidade_carga_toneladas ?? null,

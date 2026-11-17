@@ -25,6 +25,11 @@ import {
   carregarEstoqueDoBanco,
 } from '@/lib/supabase';
 import {
+  SeletorAlfineteMapa,
+  MapaGeralClientes,
+  buscarCoordenadasPorEndereco,
+} from '@/components/MapaInterativo';
+import {
   Mic,
   Square,
   Sparkles,
@@ -118,6 +123,8 @@ const DEMO_CONTATOS: Contato[] = [
     telefone: '27999887766',
     cidade: 'Vila Velha',
     endereco_fazenda: 'Rodovia do Sol, Km 18, Zona Rural, Vila Velha - ES',
+    latitude: -20.4285,
+    longitude: -40.328,
     quantidade_animais: '120 cabeças de gado',
     observacao: 'Comprou 10 toneladas de silagem de milho. Estoque acabando esta semana!',
     created_at: '2026-09-01T10:00:00Z',
@@ -130,6 +137,8 @@ const DEMO_CONTATOS: Contato[] = [
     telefone: '27998881122',
     cidade: 'Linhares',
     endereco_fazenda: 'Estrada do Guaraná, S/N, Linhares - ES',
+    latitude: -19.3911,
+    longitude: -40.0722,
     quantidade_animais: '45 vacas de leite',
     observacao: 'Cotou 50 sacos de silagem de sorgo. Retornar ligação esta semana!',
     created_at: '2026-09-25T14:30:00Z',
@@ -260,7 +269,27 @@ function limparContatosLocais(lista: Contato[]): Contato[] {
       continue;
     }
     vistos.add(chaveUnica);
-    resultado.push({ ...c, id: idNorm, nome: nomeLimpo });
+
+    const defaultLat =
+      idNorm === '11111111-1111-4111-8111-111111111101'
+        ? -20.4285
+        : idNorm === '11111111-1111-4111-8111-111111111102'
+        ? -19.3911
+        : null;
+    const defaultLng =
+      idNorm === '11111111-1111-4111-8111-111111111101'
+        ? -40.328
+        : idNorm === '11111111-1111-4111-8111-111111111102'
+        ? -40.0722
+        : null;
+
+    resultado.push({
+      ...c,
+      id: idNorm,
+      nome: nomeLimpo,
+      latitude: c.latitude ?? defaultLat,
+      longitude: c.longitude ?? defaultLng,
+    });
   }
 
   return resultado;
@@ -382,6 +411,8 @@ export default function CabocloAgroCRM() {
     nome: string;
     telefone: string;
     endereco_fazenda: string;
+    latitude: number | null;
+    longitude: number | null;
     quantidade_animais: string;
     capacidade_carga_toneladas: string;
     tipo_veiculo: string;
@@ -769,6 +800,8 @@ export default function CabocloAgroCRM() {
       nome: '',
       telefone: '',
       endereco_fazenda: '',
+      latitude: null,
+      longitude: null,
       quantidade_animais: '',
       capacidade_carga_toneladas: '',
       tipo_veiculo: '',
@@ -797,6 +830,8 @@ export default function CabocloAgroCRM() {
       nome: '',
       telefone: '',
       endereco_fazenda: '',
+      latitude: null,
+      longitude: null,
       quantidade_animais: '',
       capacidade_carga_toneladas: '',
       tipo_veiculo: '',
@@ -824,6 +859,8 @@ export default function CabocloAgroCRM() {
       nome: contato.nome,
       telefone: contato.telefone || '',
       endereco_fazenda: contato.endereco_fazenda || '',
+      latitude: contato.latitude ?? null,
+      longitude: contato.longitude ?? null,
       quantidade_animais: contato.quantidade_animais ? String(contato.quantidade_animais) : '',
       capacidade_carga_toneladas: contato.capacidade_carga_toneladas ? String(contato.capacidade_carga_toneladas) : '',
       tipo_veiculo: contato.tipo_veiculo || '',
@@ -908,6 +945,11 @@ export default function CabocloAgroCRM() {
 
       const res = await response.json();
 
+      let coordsIniciais: { lat: number; lng: number } | null = null;
+      if (res.endereco_fazenda) {
+        coordsIniciais = await buscarCoordenadasPorEndereco(res.endereco_fazenda);
+      }
+
       setEditingId(null);
       setErrosCadastro({});
       setAvisoValidacaoCadastro(null);
@@ -917,6 +959,8 @@ export default function CabocloAgroCRM() {
         nome: res.nome_cliente || '',
         telefone: res.telefone || '',
         endereco_fazenda: res.endereco_fazenda || '',
+        latitude: coordsIniciais ? coordsIniciais.lat : null,
+        longitude: coordsIniciais ? coordsIniciais.lng : null,
         quantidade_animais: res.quantidade_animais || '',
         capacidade_carga_toneladas: res.capacidade_carga_toneladas ? String(res.capacidade_carga_toneladas) : '',
         tipo_veiculo: res.tipo_veiculo || '',
@@ -1017,6 +1061,16 @@ export default function CabocloAgroCRM() {
       const capNum = formData.capacidade_carga_toneladas ? parseFloat(formData.capacidade_carga_toneladas) : null;
       const nomeLimpo = formData.nome.trim();
 
+      let latFinal = formData.latitude;
+      let lngFinal = formData.longitude;
+      if (formData.tipo === 'cliente' && (latFinal == null || lngFinal == null) && formData.endereco_fazenda.trim()) {
+        const autoGeo = await buscarCoordenadasPorEndereco(formData.endereco_fazenda);
+        if (autoGeo) {
+          latFinal = Number(autoGeo.lat.toFixed(6));
+          lngFinal = Number(autoGeo.lng.toFixed(6));
+        }
+      }
+
       if (editingId) {
         const idNormalizado = normalizarId(editingId);
         let contatoEditadoObj: Contato | null = null;
@@ -1032,6 +1086,8 @@ export default function CabocloAgroCRM() {
               nome: nomeLimpo,
               telefone: formData.telefone.trim() || null,
               endereco_fazenda: formData.endereco_fazenda.trim() || null,
+              latitude: latFinal ?? c.latitude ?? null,
+              longitude: lngFinal ?? c.longitude ?? null,
               quantidade_animais: formData.quantidade_animais.trim() || null,
               capacidade_carga_toneladas: capNum,
               tipo_veiculo: formData.tipo_veiculo.trim() || null,
@@ -1081,6 +1137,8 @@ export default function CabocloAgroCRM() {
           nome: nomeLimpo,
           telefone: formData.telefone.trim() || null,
           endereco_fazenda: formData.endereco_fazenda.trim() || null,
+          latitude: latFinal ?? existenteMesmoNome?.latitude ?? null,
+          longitude: lngFinal ?? existenteMesmoNome?.longitude ?? null,
           quantidade_animais: formData.quantidade_animais.trim() || null,
           capacidade_carga_toneladas: capNum,
           tipo_veiculo: formData.tipo_veiculo.trim() || null,
@@ -2141,6 +2199,19 @@ export default function CabocloAgroCRM() {
               </div>
             </div>
 
+            {/* 🗺️ MAPA GERAL DE CLIENTES COM ALFINETES E PROXIMIDADE NA TELA DE INÍCIO */}
+            <MapaGeralClientes
+              contatos={contatos}
+              onEditarCliente={abrirEdicaoContato}
+              onAbrirWhatsApp={(cli) =>
+                abrirWhatsAppComMensagem(
+                  cli.nome,
+                  cli.telefone,
+                  cli.status_crm === 'possibilidade' ? 'prospeccao' : 'geral'
+                )
+              }
+            />
+
             {errorMessage && (
               <div className="w-full bg-slate-900 border border-amber-600/60 rounded-xl p-3 flex items-start gap-2 text-amber-200 text-xs">
                 <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
@@ -2274,6 +2345,15 @@ export default function CabocloAgroCRM() {
                           </span>
                         )}
                       </div>
+
+                      <SeletorAlfineteMapa
+                        endereco={formData.endereco_fazenda}
+                        latitude={formData.latitude}
+                        longitude={formData.longitude}
+                        onChangeCoords={(lat, lng) =>
+                          setFormData((prev) => (prev ? { ...prev, latitude: lat, longitude: lng } : prev))
+                        }
+                      />
 
                       <div>
                         <label className="text-[10px] text-slate-400 block mb-0.5">Nº de Animais</label>
@@ -2576,9 +2656,21 @@ export default function CabocloAgroCRM() {
                         {contato.tipo === 'cliente' && (
                           <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-950/60 p-2.5 rounded-xl text-slate-300 border border-slate-850">
                             {contato.endereco_fazenda && (
-                              <div className="col-span-2 flex items-center gap-1.5 text-emerald-300 font-medium">
-                                <MapPin className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
-                                <span>{contato.endereco_fazenda}</span>
+                              <div className="col-span-2 flex items-center justify-between gap-1.5 text-emerald-300 font-medium">
+                                <div className="flex items-center gap-1.5">
+                                  <MapPin className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                                  <span>{contato.endereco_fazenda}</span>
+                                </div>
+                                {contato.latitude != null && contato.longitude != null && (
+                                  <a
+                                    href={`https://www.google.com/maps/dir/?api=1&destination=${contato.latitude},${contato.longitude}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 px-2 py-0.5 rounded-lg text-[10px] font-bold shrink-0"
+                                  >
+                                    🗺️ Google Maps
+                                  </a>
+                                )}
                               </div>
                             )}
                             {contato.quantidade_animais && (
@@ -3315,6 +3407,15 @@ export default function CabocloAgroCRM() {
                       </span>
                     )}
                   </div>
+
+                  <SeletorAlfineteMapa
+                    endereco={formData.endereco_fazenda}
+                    latitude={formData.latitude}
+                    longitude={formData.longitude}
+                    onChangeCoords={(lat, lng) =>
+                      setFormData((prev) => (prev ? { ...prev, latitude: lat, longitude: lng } : prev))
+                    }
+                  />
 
                   <div>
                     <label className="text-[11px] text-slate-400 font-semibold block mb-1">Qtd. de Animais</label>
