@@ -67,7 +67,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 
-type TabType = 'voz' | 'contatos' | 'pedidos' | 'terceiros' | 'financeiro';
+type TabType = 'inicio' | 'pedidos' | 'estoque' | 'cadastro' | 'financeiro';
 
 export interface RascunhoVoz {
   id: string;
@@ -282,7 +282,7 @@ function limparPedidosLocais(lista: Pedido[]): Pedido[] {
 }
 
 export default function CabocloAgroCRM() {
-  const [activeTab, setActiveTab] = useState<TabType>('voz');
+  const [activeTab, setActiveTab] = useState<TabType>('inicio');
   const [status, setStatus] = useState<string>('Pronto para gravar');
   const [transcript, setTranscript] = useState<string>('');
   const [isRecording, setIsRecording] = useState<boolean>(false);
@@ -1820,8 +1820,8 @@ export default function CabocloAgroCRM() {
 
       {/* Conteúdo Principal conforme Aba Ativa */}
       <main className="flex-1 max-w-md w-full mx-auto px-4 pt-4 flex flex-col gap-5">
-        {/* PAINEL DE LEMBRETES DA SEMANA (Apenas na tela inicial ao acessar o app) */}
-        {activeTab === 'voz' && (lembretesEstoqueSemana.length > 0 || lembretesProspectsSemana.length > 0 || lembretesRespondidos.length > 0) && (
+        {/* PAINEL DE LEMBRETES DA SEMANA (Na aba central "Início") */}
+        {activeTab === 'inicio' && (lembretesEstoqueSemana.length > 0 || lembretesProspectsSemana.length > 0 || lembretesRespondidos.length > 0) && (
           <div className="bg-gradient-to-r from-amber-950/60 to-slate-900 border border-amber-500/40 rounded-2xl p-4 space-y-3 shadow-lg">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
@@ -2030,8 +2030,8 @@ export default function CabocloAgroCRM() {
           </div>
         )}
 
-        {/* ABA 1: TELA DE VOZ & CLIMA */}
-        {activeTab === 'voz' && (
+        {/* ABA INÍCIO: LEMBRETES, VOZ & CLIMA */}
+        {activeTab === 'inicio' && (
           <div className="flex flex-col gap-4">
             {/* 🔴 BARRA DE GRAVAÇÃO COMPACTA (Texto à esquerda, Botão à direita) */}
             <div className="w-full bg-slate-900 border border-emerald-500/40 rounded-2xl p-3.5 flex items-center justify-between gap-3 shadow-lg">
@@ -2405,9 +2405,35 @@ export default function CabocloAgroCRM() {
           </div>
         )}
 
-        {/* ABA 2: CONTATOS */}
-        {activeTab === 'contatos' && (
+        {/* ABA CADASTRO (CLIENTES, POSSIBILIDADES, TERCEIROS, FORNECEDORES E FUNCIONÁRIOS) */}
+        {activeTab === 'cadastro' && (
           <div className="space-y-4">
+            <div className="flex items-center justify-between gap-2 px-1">
+              <div>
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-emerald-400" /> Cadastros & Contatos ({contatosFiltrados.length})
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  Clientes, possibilidades, terceiros/freteiros, fornecedores e equipe
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => abrirCadastroManual('terceiro')}
+                  className="bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all"
+                  title="Cadastrar novo caminhoneiro / terceiro"
+                >
+                  <Truck className="w-3.5 h-3.5 text-amber-400" /> + Freteiro
+                </button>
+                <button
+                  onClick={() => abrirCadastroManual(filtroContato === 'terceiro' ? 'terceiro' : 'cliente')}
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Novo
+                </button>
+              </div>
+            </div>
+
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
               {[
                 { id: 'todos', label: 'Todos' },
@@ -2419,17 +2445,11 @@ export default function CabocloAgroCRM() {
               ].map((item) => (
                 <button
                   key={item.id}
-                  onClick={() => {
-                    if (item.id === 'terceiro') {
-                      setActiveTab('terceiros');
-                    } else {
-                      setFiltroContato(item.id);
-                    }
-                  }}
-                  className={`px-3 py-1.5 rounded-full whitespace-nowrap font-medium border ${
+                  onClick={() => setFiltroContato(item.id)}
+                  className={`px-3 py-1.5 rounded-full whitespace-nowrap font-medium border transition-all ${
                     filtroContato === item.id
                       ? 'bg-emerald-500 text-slate-950 font-bold border-emerald-400'
-                      : 'bg-slate-900 text-slate-300 border-slate-800'
+                      : 'bg-slate-900 text-slate-300 border-slate-800 hover:border-slate-700'
                   }`}
                 >
                   {item.label}
@@ -2473,7 +2493,18 @@ export default function CabocloAgroCRM() {
                           >
                             {contato.tipo === 'terceiro' ? 'Terceiro / Freteiro' : contato.tipo}
                           </span>
+                          {contato.tipo === 'terceiro' && (
+                            <span className="bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded text-[10px] font-extrabold font-mono">
+                              {contato.capacidade_carga_toneladas || 10} Ton
+                            </span>
+                          )}
                         </div>
+                        {contato.tipo === 'terceiro' && contato.tipo_veiculo && (
+                          <span className="text-xs text-slate-400 block mt-0.5">
+                            {contato.tipo_veiculo}
+                            {contato.cidade ? ` • ${contato.cidade}` : ''}
+                          </span>
+                        )}
                         {contato.telefone && (
                           <span className="text-xs text-slate-400 flex items-center gap-1 mt-0.5 font-mono">
                             <Phone className="w-3 h-3 text-slate-500" /> {contato.telefone}
@@ -2500,15 +2531,27 @@ export default function CabocloAgroCRM() {
 
                         <button
                           onClick={() =>
-                            abrirWhatsAppComMensagem(
-                              contato.nome,
-                              contato.telefone,
-                              contato.status_crm === 'possibilidade' ? 'prospeccao' : 'geral'
-                            )
+                            contato.tipo === 'terceiro'
+                              ? abrirWhatsAppComMensagem(
+                                  contato.nome,
+                                  contato.telefone,
+                                  'frete_terceiro',
+                                  {
+                                    produto: 'Silagem de Milho',
+                                    quantidade: '10 toneladas',
+                                    endereco_fazenda: 'Fazenda Bela Vista (Vila Velha)',
+                                  }
+                                )
+                              : abrirWhatsAppComMensagem(
+                                  contato.nome,
+                                  contato.telefone,
+                                  contato.status_crm === 'possibilidade' ? 'prospeccao' : 'geral'
+                                )
                           }
                           className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1"
                         >
-                          <img src="/whatsapp.png" alt="WhatsApp" className="w-4 h-4 object-contain shrink-0" /> Whats
+                          <img src="/whatsapp.png" alt="WhatsApp" className="w-4 h-4 object-contain shrink-0" />{' '}
+                          {contato.tipo === 'terceiro' ? 'Cotar Frete' : 'Whats'}
                         </button>
 
                         {temDetalhes && (
@@ -2548,13 +2591,23 @@ export default function CabocloAgroCRM() {
                         )}
 
                         {contato.tipo === 'terceiro' && (
-                          <div className="flex items-center justify-between text-[11px] bg-amber-950/40 border border-amber-800/40 p-2.5 rounded-xl text-amber-200">
-                            <span className="font-semibold flex items-center gap-1">
-                              <Truck className="w-3.5 h-3.5 text-amber-400" /> {contato.tipo_veiculo || 'Caminhão de Carga'}
-                            </span>
-                            <span className="bg-amber-900/60 px-2 py-0.5 rounded font-mono font-bold text-amber-300">
-                              Capacidade: {contato.capacidade_carga_toneladas || 10}t
-                            </span>
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-[11px] bg-amber-950/40 border border-amber-800/40 p-2.5 rounded-xl text-amber-200">
+                              <span className="font-semibold flex items-center gap-1">
+                                <Truck className="w-3.5 h-3.5 text-amber-400" /> {contato.tipo_veiculo || 'Caminhão de Carga'}
+                              </span>
+                              <span className="bg-amber-900/60 px-2 py-0.5 rounded font-mono font-bold text-amber-300">
+                                Capacidade: {contato.capacidade_carga_toneladas || 10}t
+                              </span>
+                            </div>
+                            <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 text-xs flex items-center justify-between">
+                              <span className="text-slate-400 text-[11px]">Simulação p/ 10t de silagem:</span>
+                              <span className="font-bold text-emerald-400">
+                                {(contato.capacidade_carga_toneladas || 10) >= 10
+                                  ? '1 viagem (Capacidade suficiente)'
+                                  : `${Math.ceil(10 / (contato.capacidade_carga_toneladas || 5))} viagens necessárias`}
+                              </span>
+                            </div>
                           </div>
                         )}
 
@@ -2568,410 +2621,264 @@ export default function CabocloAgroCRM() {
                   </div>
                 );
               })}
+
+              {contatosFiltrados.length === 0 && (
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-400 text-xs italic">
+                  Nenhum cadastro encontrado para este filtro. Clique em &quot;+ Novo&quot; para cadastrar.
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* ABA 3: TERCEIROS - TELA ÚNICA E UNIFICADA */}
-        {activeTab === 'terceiros' && (
+        {/* ABA PEDIDOS DE VENDA */}
+        {activeTab === 'pedidos' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between px-1">
+            <div className="flex items-center justify-between gap-2 px-1">
               <div>
-                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <Truck className="w-4 h-4 text-amber-400" /> Terceiros & Freteiros Alocáveis
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                  <ShoppingBag className="w-4 h-4 text-emerald-400" /> Pedidos de Venda ({pedidos.length})
                 </h2>
                 <p className="text-[11px] text-slate-500">
-                  Gestão unificada de caminhões e capacidade de carga ({terceirosTransportadores.length})
+                  Controle de pedidos, entregas e alocação de freteiros
                 </p>
               </div>
               <button
-                onClick={() => abrirCadastroManual('terceiro')}
-                className="bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all shrink-0"
+                onClick={() => {
+                  setEditingPedidoId(null);
+                  setErrosPedido({});
+                  setAvisoValidacaoPedido(null);
+                  setNovoPedidoForm({
+                    clienteId: '',
+                    terceiroId: '',
+                    itens: [{ estoqueId: estoque[0]?.id || 'est-1', quantidade: '10' }],
+                    dataCompra: hojeStr,
+                    diasEstoqueFim: '30',
+                    statusFinanceiro: 'pendente',
+                    observacao: '',
+                  });
+                  setIsNovoPedidoModalOpen(true);
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all shrink-0"
               >
-                <Plus className="w-3.5 h-3.5" /> Adicionar
+                <Plus className="w-3.5 h-3.5" /> Novo Pedido
               </button>
             </div>
 
             <div className="space-y-3">
-              {terceirosTransportadores.map((terceiro) => {
-                const cId = terceiro.id || '';
-                const isExpanded = !!contatosExpandidos[cId];
-                const temDetalhes = !!(
-                  terceiro.observacao ||
-                  terceiro.capacidade_carga_toneladas ||
-                  terceiro.tipo_veiculo
-                );
+              {pedidos.map((pedido) => {
+                const clienteObj = contatos.find((c) => c.nome === pedido.nome_cliente || c.id === pedido.contato_id);
+                const qtdTon = pedido.quantidade_toneladas_num || 10;
 
                 return (
-                  <div
-                    key={cId}
-                    className="bg-slate-900 border border-slate-800 hover:border-amber-500/40 rounded-2xl p-3.5 space-y-3 shadow-md transition-all"
-                  >
-                    {/* Linha Cabeçalho Principal (Clean) */}
-                    <div
-                      className="flex items-start justify-between gap-2 cursor-pointer select-none"
-                      onClick={() => temDetalhes && toggleExpandContato(cId)}
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-sm text-white">{terceiro.nome}</span>
-                          <span className="bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded text-[10px] font-extrabold font-mono">
-                            {terceiro.capacidade_carga_toneladas || 10} Ton
-                          </span>
-                        </div>
-
-                        <span className="text-xs text-slate-400 block mt-0.5">
-                          {terceiro.tipo_veiculo || 'Caminhão de Frete'}
-                          {terceiro.cidade ? ` • ${terceiro.cidade}` : ''}
-                        </span>
-
-                        {terceiro.telefone && (
-                          <span className="text-xs text-slate-400 flex items-center gap-1 mt-1 font-mono">
-                            <Phone className="w-3 h-3 text-slate-500" /> {terceiro.telefone}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <div key={pedido.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white text-sm">{pedido.nome_cliente}</span>
                         <button
-                          onClick={() => abrirEdicaoContato(terceiro)}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
-                          title="Editar cadastro"
+                          onClick={() => abrirEdicaoPedido(pedido)}
+                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
+                          title="Editar pedido"
                         >
-                          <Edit3 className="w-3.5 h-3.5 text-amber-400" /> Editar
+                          <Edit3 className="w-3.5 h-3.5" />
                         </button>
-
                         <button
-                          onClick={() => excluirContato(cId || terceiro.nome)}
-                          className="bg-slate-800 hover:bg-red-950 text-red-400 border border-slate-700 hover:border-red-800 p-1.5 rounded-lg text-xs transition-colors"
-                          title="Excluir terceiro"
+                          onClick={() => pedido.id && excluirPedido(pedido.id)}
+                          className="p-1 rounded bg-slate-800 hover:bg-red-950 text-red-400 transition-colors"
+                          title="Excluir pedido"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
-
-                        <button
-                          onClick={() =>
-                            abrirWhatsAppComMensagem(
-                              terceiro.nome,
-                              terceiro.telefone,
-                              'frete_terceiro',
-                              {
-                                produto: 'Silagem de Milho',
-                                quantidade: '10 toneladas',
-                                endereco_fazenda: 'Fazenda Bela Vista (Vila Velha)',
-                              }
-                            )
-                          }
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 shadow transition-colors"
-                        >
-                          <img src="/whatsapp.png" alt="WhatsApp" className="w-4 h-4 object-contain shrink-0" /> Cotar Frete
-                        </button>
-
-                        {temDetalhes && (
-                          <button
-                            onClick={() => toggleExpandContato(cId)}
-                            className="p-1 text-slate-400 hover:text-white transition-colors ml-0.5"
-                            title={isExpanded ? 'Ocultar detalhes' : 'Ver mais detalhes'}
-                          >
-                            {isExpanded ? (
-                              <ChevronUp className="w-4 h-4 text-amber-400" />
-                            ) : (
-                              <ChevronDown className="w-4 h-4 text-slate-400" />
-                            )}
-                          </button>
-                        )}
                       </div>
+                      <span className="text-[11px] text-slate-400 font-mono">Data: {pedido.data_compra}</span>
                     </div>
 
-                    {/* Detalhes Expandidos (Simulação de Frete & Observações) */}
-                    {isExpanded && temDetalhes && (
-                      <div className="pt-2 border-t border-slate-800/80 space-y-2 animate-fadeIn">
-                        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 text-xs flex items-center justify-between">
-                          <span className="text-slate-400 text-[11px]">Simulação p/ 10t de silagem:</span>
-                          <span className="font-bold text-emerald-400">
-                            {(terceiro.capacidade_carga_toneladas || 10) >= 10
-                              ? '1 viagem (Capacidade suficiente)'
-                              : `${Math.ceil(10 / (terceiro.capacidade_carga_toneladas || 5))} viagens necessárias`}
-                          </span>
-                        </div>
+                    <div className="space-y-1.5 bg-slate-950 p-3 rounded-xl border border-slate-850">
+                      <div className="flex items-center justify-between text-xs text-slate-200">
+                        <span className="font-semibold text-emerald-400">🌾 {pedido.produto}</span>
+                        <span className="font-bold text-emerald-300 text-sm">
+                          {pedido.valor_total ? `R$ ${pedido.valor_total.toFixed(2)}` : 'R$ -'}
+                        </span>
+                      </div>
 
-                        {terceiro.observacao && (
-                          <p className="text-xs text-slate-300 bg-slate-950/60 p-2.5 rounded-xl italic border border-slate-850">
-                            &quot;{terceiro.observacao}&quot;
-                          </p>
-                        )}
+                      {pedido.quantidade && (
+                        <span className="text-[11px] text-slate-400 block">Qtd: {pedido.quantidade}</span>
+                      )}
+                    </div>
+
+                    {clienteObj?.endereco_fazenda && (
+                      <div className="text-[11px] text-emerald-300 flex items-center gap-1">
+                        <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>{clienteObj.endereco_fazenda}</span>
                       </div>
                     )}
+
+                    <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2">
+                      <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1">
+                        <Truck className="w-3.5 h-3.5" /> Terceiros Disponíveis p/ Carga de {qtdTon}t:
+                      </span>
+
+                      <div className="space-y-1.5">
+                        {terceirosTransportadores.map((t) => {
+                          const cap = t.capacidade_carga_toneladas || 10;
+                          const viagens = cap >= qtdTon ? 1 : Math.ceil(qtdTon / cap);
+                          const podeLevarDireto = cap >= qtdTon;
+
+                          return (
+                            <div
+                              key={t.id}
+                              className="flex items-center justify-between text-xs p-2 bg-slate-900 rounded-lg border border-slate-850"
+                            >
+                              <div>
+                                <span className="font-bold text-white block">{t.nome}</span>
+                                <span className="text-[10px] text-slate-400">
+                                  {t.tipo_veiculo} ({cap}t) •{' '}
+                                  <strong className={podeLevarDireto ? 'text-emerald-400' : 'text-amber-400'}>
+                                    {podeLevarDireto ? '1 viagem' : `${viagens} viagens`}
+                                  </strong>
+                                </span>
+                              </div>
+
+                              <button
+                                onClick={() =>
+                                  abrirWhatsAppComMensagem(
+                                    t.nome,
+                                    t.telefone,
+                                    'frete_terceiro',
+                                    {
+                                      produto: pedido.produto || 'Silagem',
+                                      quantidade: pedido.quantidade || '10t',
+                                      endereco_fazenda: clienteObj?.endereco_fazenda || pedido.nome_cliente,
+                                    }
+                                  )
+                                }
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1"
+                              >
+                                <img src="/whatsapp.png" alt="WhatsApp" className="w-3.5 h-3.5 object-contain shrink-0" /> Chamar
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 );
               })}
-
-              {terceirosTransportadores.length === 0 && (
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 text-center text-slate-400 text-xs italic">
-                  Nenhum terceiro / freteiro cadastrado ainda. Clique em &quot;+ Adicionar&quot; para cadastrar um caminhoneiro.
-                </div>
-              )}
             </div>
           </div>
         )}
 
-        {/* ABA 4: PEDIDOS & GERENCIAMENTO DE ESTOQUE */}
-        {activeTab === 'pedidos' && (
+        {/* ABA ESTOQUE */}
+        {activeTab === 'estoque' && (
           <div className="space-y-4">
-            {/* Header & Sub-abas (Pedidos vs Gerenciar Estoque) */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
-                <button
-                  onClick={() => setSubAbaPedidos('pedidos')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    subAbaPedidos === 'pedidos'
-                      ? 'bg-emerald-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  🛒 Pedidos ({pedidos.length})
-                </button>
-                <button
-                  onClick={() => setSubAbaPedidos('estoque')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    subAbaPedidos === 'estoque'
-                      ? 'bg-sky-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  📦 Estoque ({estoque.length})
-                </button>
+            <div className="flex items-center justify-between gap-2 px-1">
+              <div>
+                <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                  <Package className="w-4 h-4 text-sky-400" /> Controle de Estoque ({estoque.length})
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  Saldo de silagem disponível, preços e alertas de reposição
+                </p>
               </div>
-
-              {subAbaPedidos === 'pedidos' ? (
-                <button
-                  onClick={() => {
-                    setEditingPedidoId(null);
-                    setErrosPedido({});
-                    setAvisoValidacaoPedido(null);
-                    setNovoPedidoForm({
-                      clienteId: '',
-                      terceiroId: '',
-                      itens: [{ estoqueId: estoque[0]?.id || 'est-1', quantidade: '10' }],
-                      dataCompra: hojeStr,
-                      diasEstoqueFim: '30',
-                      statusFinanceiro: 'pendente',
-                      observacao: '',
-                    });
-                    setIsNovoPedidoModalOpen(true);
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Novo Pedido
-                </button>
-              ) : (
-                <button
-                  onClick={() => {
-                    setEditingEstoqueId(null);
-                    setErrosEstoque({});
-                    setAvisoValidacaoEstoque(null);
-                    setNovoItemEstoqueForm({
-                      nome: '',
-                      quantidade: '',
-                      unidade: 'toneladas',
-                      preco: '',
-                      alerta: '10',
-                      observacao: '',
-                    });
-                    setIsNovoItemEstoqueModalOpen(true);
-                  }}
-                  className="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all shrink-0"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Entrada Estoque
-                </button>
-              )}
+              <button
+                onClick={() => {
+                  setEditingEstoqueId(null);
+                  setErrosEstoque({});
+                  setAvisoValidacaoEstoque(null);
+                  setNovoItemEstoqueForm({
+                    nome: '',
+                    quantidade: '',
+                    unidade: 'toneladas',
+                    preco: '',
+                    alerta: '10',
+                    observacao: '',
+                  });
+                  setIsNovoItemEstoqueModalOpen(true);
+                }}
+                className="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" /> Entrada Estoque
+              </button>
             </div>
 
-            {/* VISUALIZAÇÃO DE PEDIDOS */}
-            {subAbaPedidos === 'pedidos' && (
-              <div className="space-y-3">
-                {pedidos.map((pedido) => {
-                  const clienteObj = contatos.find((c) => c.nome === pedido.nome_cliente || c.id === pedido.contato_id);
-                  const qtdTon = pedido.quantidade_toneladas_num || 10;
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="bg-slate-900 border border-sky-500/30 p-3 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block uppercase font-semibold">Total de Produtos</span>
+                  <span className="text-base font-extrabold text-sky-400">{estoque.length} itens</span>
+                </div>
+                <div className="bg-slate-900 border border-emerald-500/30 p-3 rounded-xl">
+                  <span className="text-[10px] text-slate-400 block uppercase font-semibold">Valor Total Estoque</span>
+                  <span className="text-base font-extrabold text-emerald-400">
+                    R$ {estoque.reduce((acc, i) => acc + (i.quantidade_disponivel * i.preco_unitario), 0).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                {estoque.map((item) => {
+                  const isBaixo = item.quantidade_disponivel <= item.alerta_minimo;
+                  const isEsgotado = item.quantidade_disponivel <= 0;
 
                   return (
-                    <div key={pedido.id} className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-md">
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-white text-sm">{pedido.nome_cliente}</span>
-                          <button
-                            onClick={() => abrirEdicaoPedido(pedido)}
-                            className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
-                            title="Editar pedido"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => pedido.id && excluirPedido(pedido.id)}
-                            className="p-1 rounded bg-slate-800 hover:bg-red-950 text-red-400 transition-colors"
-                            title="Excluir pedido"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <span className="text-[11px] text-slate-400 font-mono">Data: {pedido.data_compra}</span>
-                      </div>
-
-                      <div className="space-y-1.5 bg-slate-950 p-3 rounded-xl border border-slate-850">
-                        <div className="flex items-center justify-between text-xs text-slate-200">
-                          <span className="font-semibold text-emerald-400">🌾 {pedido.produto}</span>
-                          <span className="font-bold text-emerald-300 text-sm">
-                            {pedido.valor_total ? `R$ ${pedido.valor_total.toFixed(2)}` : 'R$ -'}
+                    <div
+                      key={item.id}
+                      className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2 shadow-md hover:border-slate-700 transition-colors"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm text-white block">{item.nome}</span>
+                            <button
+                              onClick={() => abrirEdicaoEstoque(item)}
+                              className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
+                              title="Editar produto do estoque"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => excluirItemEstoque(item.id)}
+                              className="p-1 rounded bg-slate-800 hover:bg-red-950 text-red-400 transition-colors"
+                              title="Excluir produto do estoque"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <span className="text-xs text-slate-400 font-mono">
+                            Preço Unitário: R$ {item.preco_unitario.toFixed(2)} / {item.unidade_medida}
                           </span>
                         </div>
 
-                        {pedido.quantidade && (
-                          <span className="text-[11px] text-slate-400 block">Qtd: {pedido.quantidade}</span>
-                        )}
-                      </div>
-
-                      {clienteObj?.endereco_fazenda && (
-                        <div className="text-[11px] text-emerald-300 flex items-center gap-1">
-                          <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          <span>{clienteObj.endereco_fazenda}</span>
-                        </div>
-                      )}
-
-                      <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2">
-                        <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1">
-                          <Truck className="w-3.5 h-3.5" /> Terceiros Disponíveis p/ Carga de {qtdTon}t:
+                        <span
+                          className={`px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
+                            isEsgotado
+                              ? 'bg-red-950 text-red-400 border-red-800'
+                              : isBaixo
+                              ? 'bg-amber-950 text-amber-400 border-amber-800 animate-pulse'
+                              : 'bg-emerald-950 text-emerald-400 border-emerald-800'
+                          }`}
+                        >
+                          {isEsgotado ? '❌ Esgotado' : isBaixo ? '⚠️ Estoque Baixo' : '✅ Disponível'}
                         </span>
-
-                        <div className="space-y-1.5">
-                          {terceirosTransportadores.map((t) => {
-                            const cap = t.capacidade_carga_toneladas || 10;
-                            const viagens = cap >= qtdTon ? 1 : Math.ceil(qtdTon / cap);
-                            const podeLevarDireto = cap >= qtdTon;
-
-                            return (
-                              <div
-                                key={t.id}
-                                className="flex items-center justify-between text-xs p-2 bg-slate-900 rounded-lg border border-slate-850"
-                              >
-                                <div>
-                                  <span className="font-bold text-white block">{t.nome}</span>
-                                  <span className="text-[10px] text-slate-400">
-                                    {t.tipo_veiculo} ({cap}t) •{' '}
-                                    <strong className={podeLevarDireto ? 'text-emerald-400' : 'text-amber-400'}>
-                                      {podeLevarDireto ? '1 viagem' : `${viagens} viagens`}
-                                    </strong>
-                                  </span>
-                                </div>
-
-                                <button
-                                  onClick={() =>
-                                    abrirWhatsAppComMensagem(
-                                      t.nome,
-                                      t.telefone,
-                                      'frete_terceiro',
-                                      {
-                                        produto: pedido.produto || 'Silagem',
-                                        quantidade: pedido.quantidade || '10t',
-                                        endereco_fazenda: clienteObj?.endereco_fazenda || pedido.nome_cliente,
-                                      }
-                                    )
-                                  }
-                                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1"
-                                >
-                                  <img src="/whatsapp.png" alt="WhatsApp" className="w-3.5 h-3.5 object-contain shrink-0" /> Chamar
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
                       </div>
+
+                      <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 flex items-center justify-between text-xs">
+                        <span className="text-slate-400">Quantidade Atual:</span>
+                        <span className="font-extrabold text-white text-sm font-mono">
+                          {item.quantidade_disponivel} {item.unidade_medida}
+                        </span>
+                      </div>
+
+                      {item.observacao && (
+                        <p className="text-[11px] text-slate-400 italic bg-slate-950/40 p-2 rounded-lg">
+                          &quot;{item.observacao}&quot;
+                        </p>
+                      )}
                     </div>
                   );
                 })}
               </div>
-            )}
-
-            {/* VISUALIZAÇÃO DO GERENCIAMENTO DE ESTOQUE */}
-            {subAbaPedidos === 'estoque' && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-slate-900 border border-sky-500/30 p-3 rounded-xl">
-                    <span className="text-[10px] text-slate-400 block uppercase font-semibold">Total de Produtos</span>
-                    <span className="text-base font-extrabold text-sky-400">{estoque.length} itens</span>
-                  </div>
-                  <div className="bg-slate-900 border border-emerald-500/30 p-3 rounded-xl">
-                    <span className="text-[10px] text-slate-400 block uppercase font-semibold">Valor Total Estoque</span>
-                    <span className="text-base font-extrabold text-emerald-400">
-                      R$ {estoque.reduce((acc, i) => acc + (i.quantidade_disponivel * i.preco_unitario), 0).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-2.5">
-                  {estoque.map((item) => {
-                    const isBaixo = item.quantidade_disponivel <= item.alerta_minimo;
-                    const isEsgotado = item.quantidade_disponivel <= 0;
-
-                    return (
-                      <div
-                        key={item.id}
-                        className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2 shadow-md hover:border-slate-700 transition-colors"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm text-white block">{item.nome}</span>
-                              <button
-                                onClick={() => abrirEdicaoEstoque(item)}
-                                className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 transition-colors"
-                                title="Editar produto do estoque"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => excluirItemEstoque(item.id)}
-                                className="p-1 rounded bg-slate-800 hover:bg-red-950 text-red-400 transition-colors"
-                                title="Excluir produto do estoque"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                            <span className="text-xs text-slate-400 font-mono">
-                              Preço Unitário: R$ {item.preco_unitario.toFixed(2)} / {item.unidade_medida}
-                            </span>
-                          </div>
-
-                          <span
-                            className={`px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase border ${
-                              isEsgotado
-                                ? 'bg-red-950 text-red-400 border-red-800'
-                                : isBaixo
-                                ? 'bg-amber-950 text-amber-400 border-amber-800 animate-pulse'
-                                : 'bg-emerald-950 text-emerald-400 border-emerald-800'
-                            }`}
-                          >
-                            {isEsgotado ? '❌ Esgotado' : isBaixo ? '⚠️ Estoque Baixo' : '✅ Disponível'}
-                          </span>
-                        </div>
-
-                        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 flex items-center justify-between text-xs">
-                          <span className="text-slate-400">Quantidade Atual:</span>
-                          <span className="font-extrabold text-white text-sm font-mono">
-                            {item.quantidade_disponivel} {item.unidade_medida}
-                          </span>
-                        </div>
-
-                        {item.observacao && (
-                          <p className="text-[11px] text-slate-400 italic bg-slate-950/40 p-2 rounded-lg">
-                            &quot;{item.observacao}&quot;
-                          </p>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -4089,61 +3996,72 @@ export default function CabocloAgroCRM() {
       )}
 
       {/* NAVBAR MOBILE FOOTER */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 py-2.5 px-4 z-40">
-        <div className="max-w-md mx-auto flex items-center justify-around">
-          <button
-            onClick={() => {
-              setActiveTab('voz');
-              if (isOnline) carregarTodosDados(true);
-            }}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
-              activeTab === 'voz' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Mic className="w-5 h-5" />
-            <span>Voz</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('contatos');
-              if (isOnline) carregarTodosDados(true);
-            }}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
-              activeTab === 'contatos' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Users className="w-5 h-5" />
-            <span>Contatos</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab('terceiros');
-              if (isOnline) carregarTodosDados(true);
-            }}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
-              activeTab === 'terceiros' ? 'text-amber-400' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Truck className="w-5 h-5" />
-            <span>Terceiros</span>
-          </button>
-
+      <nav className="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 py-2 px-4 z-40 shadow-2xl">
+        <div className="max-w-md mx-auto grid grid-cols-5 items-center">
           <button
             onClick={() => {
               setActiveTab('pedidos');
               if (isOnline) carregarTodosDados(true);
             }}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors relative ${
+            className={`flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
               activeTab === 'pedidos' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <ShoppingBag className="w-5 h-5" />
             <span>Pedidos</span>
-            {lembretesEstoqueSemana.length > 0 && (
-              <span className="absolute -top-1 right-2 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab('estoque');
+              if (isOnline) carregarTodosDados(true);
+            }}
+            className={`flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-semibold transition-colors relative cursor-pointer ${
+              activeTab === 'estoque' ? 'text-sky-400' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Package className="w-5 h-5" />
+            <span>Estoque</span>
+            {estoque.some((i) => i.quantidade_disponivel <= i.alerta_minimo) && (
+              <span className="absolute top-0.5 right-4 w-2 h-2 rounded-full bg-amber-400" title="Alerta de estoque baixo" />
             )}
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab('inicio');
+              if (isOnline) carregarTodosDados(true);
+            }}
+            className={`flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-bold transition-all relative cursor-pointer ${
+              activeTab === 'inicio' ? 'text-emerald-400 scale-105' : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            <div
+              className={`p-2 rounded-2xl border transition-all ${
+                activeTab === 'inicio'
+                  ? 'bg-emerald-600/25 border-emerald-500/60 text-emerald-400 shadow-md shadow-emerald-950/60'
+                  : 'bg-slate-800/80 border-slate-700 text-slate-300'
+              }`}
+            >
+              <Home className="w-5 h-5" />
+            </div>
+            <span>Início</span>
+            {(lembretesEstoqueSemana.length > 0 || lembretesProspectsSemana.length > 0) && (
+              <span className="absolute top-0 right-4 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+            )}
+          </button>
+
+          <button
+            onClick={() => {
+              setActiveTab('cadastro');
+              if (isOnline) carregarTodosDados(true);
+            }}
+            className={`flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+              activeTab === 'cadastro' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Users className="w-5 h-5" />
+            <span>Cadastro</span>
           </button>
 
           <button
@@ -4151,7 +4069,7 @@ export default function CabocloAgroCRM() {
               setActiveTab('financeiro');
               if (isOnline) carregarTodosDados(true);
             }}
-            className={`flex flex-col items-center gap-1 text-[11px] font-semibold transition-colors ${
+            className={`flex flex-col items-center justify-center gap-1 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
               activeTab === 'financeiro' ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
