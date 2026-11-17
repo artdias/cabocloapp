@@ -87,7 +87,7 @@ export interface RascunhoVoz {
 export interface LembreteRespondidoItem {
   id: string;
   nome: string;
-  tipo: 'estoque' | 'prospect' | 'pagamento';
+  tipo: 'pedidos' | 'faturamentos' | 'estoque' | 'prospect' | 'pagamento';
   detalhe: string;
   data_resposta: string;
 }
@@ -460,11 +460,14 @@ export default function CabocloAgroCRM() {
     nomeCliente: '',
   });
 
-  // Estado para Gerenciamento de Lembretes (Adiar, Excluir, Respondidos)
+  // Estado para Gerenciamento de Lembretes (Adiar, Excluir, Respondidos e Categorias Separadas)
   const [lembretesAdiados, setLembretesAdiados] = useState<Record<string, string>>({});
   const [lembretesExcluidos, setLembretesExcluidos] = useState<string[]>([]);
   const [lembretesRespondidos, setLembretesRespondidos] = useState<LembreteRespondidoItem[]>([]);
   const [abaLembretes, setAbaLembretes] = useState<'pendentes' | 'respondidos'>('pendentes');
+  const [categoriaLembrete, setCategoriaLembrete] = useState<
+    'todos' | 'pedidos' | 'faturamentos' | 'estoque' | 'prospects'
+  >('todos');
   const [adiarModal, setAdiarModal] = useState<{ id: string; nome: string } | null>(null);
   // Estados da Aba Financeiro
   const [subAbaFinanceiro, setSubAbaFinanceiro] = useState<'periodo' | 'clientes' | 'lancamentos'>('periodo');
@@ -1687,7 +1690,7 @@ export default function CabocloAgroCRM() {
   const marcarComoRespondido = (
     id: string | undefined,
     nome: string,
-    tipo: 'estoque' | 'prospect' | 'pagamento',
+    tipo: 'pedidos' | 'faturamentos' | 'estoque' | 'prospect' | 'pagamento',
     detalhe: string
   ) => {
     if (!id) return;
@@ -1743,7 +1746,11 @@ export default function CabocloAgroCRM() {
       data_vencimento?: string;
       info_parcelas?: string;
     },
-    lembreteInfo?: { id: string; tipo: 'estoque' | 'prospect' | 'pagamento'; detalhe: string }
+    lembreteInfo?: {
+      id: string;
+      tipo: 'pedidos' | 'faturamentos' | 'estoque' | 'prospect' | 'pagamento';
+      detalhe: string;
+    }
   ) => {
     let msg = '';
     const dataCompraFormatada = detalhesPedido?.data_compra || 'recente';
@@ -1795,7 +1802,12 @@ export default function CabocloAgroCRM() {
     const novosPedidos = pedidos.map((p) => {
       if (p.id === pedidoId) {
         const novoStatus: StatusFinanceiro = p.status_financeiro === 'pago' ? 'pendente' : 'pago';
-        pedidoAlterado = { ...p, status_financeiro: novoStatus };
+        const qtdParc = p.qtd_parcelas && p.qtd_parcelas > 1 ? p.qtd_parcelas : 1;
+        pedidoAlterado = {
+          ...p,
+          status_financeiro: novoStatus,
+          parcelas_pagas: novoStatus === 'pago' ? qtdParc : Math.max(0, (p.parcelas_pagas || 0) - 1),
+        };
         return pedidoAlterado;
       }
       return p;
@@ -1812,18 +1824,74 @@ export default function CabocloAgroCRM() {
     }
   };
 
+  // Confirmar 1ª ou próxima parcela e deixar o restante em aberto (ou quitar se for a última)
+  const confirmarParcelaPedido = async (pedidoId: string) => {
+    let pedidoAlterado: Pedido | null = null;
+    const novosPedidos = pedidos.map((p) => {
+      if (p.id === pedidoId) {
+        const qtdParc = p.qtd_parcelas && p.qtd_parcelas > 1 ? Number(p.qtd_parcelas) : 1;
+        const atuaisPagas = Math.min(qtdParc, Math.max(0, Number(p.parcelas_pagas || 0)));
+        const novasPagas = Math.min(qtdParc, atuaisPagas + 1);
+        const quitouTodas = novasPagas >= qtdParc;
+        pedidoAlterado = {
+          ...p,
+          parcelas_pagas: novasPagas,
+          status_financeiro: quitouTodas ? 'pago' : 'pendente',
+        };
+        return pedidoAlterado;
+      }
+      return p;
+    });
+
+    setPedidos(novosPedidos);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
+    }
+    if (pedidoAlterado) {
+      await salvarPedidoNoBanco(pedidoAlterado);
+    }
+  };
+
+  // Quitar a dívida toda do pedido (mesmo que seja parcelado)
+  const quitarDividaTotalPedido = async (pedidoId: string) => {
+    let pedidoAlterado: Pedido | null = null;
+    const novosPedidos = pedidos.map((p) => {
+      if (p.id === pedidoId) {
+        const qtdParc = p.qtd_parcelas && p.qtd_parcelas > 1 ? Number(p.qtd_parcelas) : 1;
+        pedidoAlterado = {
+          ...p,
+          parcelas_pagas: qtdParc,
+          status_financeiro: 'pago',
+        };
+        return pedidoAlterado;
+      }
+      return p;
+    });
+
+    setPedidos(novosPedidos);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
+    }
+    if (pedidoAlterado) {
+      await salvarPedidoNoBanco(pedidoAlterado);
+    }
+  };
+
   const terceirosTransportadores = contatos.filter((c) => c.tipo === 'terceiro');
 
   const limiteSeteDias = new Date();
   limiteSeteDias.setDate(limiteSeteDias.getDate() + 7);
   const limiteSeteDiasStr = limiteSeteDias.toISOString().split('T')[0];
 
-  const lembretesEstoqueSemana = pedidos.filter(
-    (p) => p.data_previsao_fim_estoque && p.data_previsao_fim_estoque <= limiteSeteDiasStr && isLembreteAtivo(p.id)
+  // 1. LEMBRETES DE PEDIDOS (Pré-pedidos, Confirmação Cliente, Carregamentos Agendados)
+  const lembretesPedidosSemana = pedidos.filter(
+    (p) =>
+      p.tipo_operacao === 'venda' &&
+      p.etapa_pedido !== 'carregado' &&
+      isLembreteAtivo(`ped-${p.id}`)
   );
-  const lembretesProspectsSemana = contatos.filter(
-    (c) => c.status_crm === 'possibilidade' && isLembreteAtivo(c.id)
-  );
+
+  // 2. LEMBRETES DE FATURAMENTOS (Pagamentos em aberto, atrasados ou com parcelas restantes)
   const lembretesPagamentoSemana = pedidos.filter(
     (p) =>
       p.status_financeiro !== 'pago' &&
@@ -1831,12 +1899,38 @@ export default function CabocloAgroCRM() {
       Boolean(
         p.data_vencimento_pagamento ||
           p.qtd_parcelas ||
+          p.parcelas_pagas ||
           p.valor_adiantamento ||
           p.dia_pagamento_parcelas ||
           p.status_financeiro === 'atrasado' ||
           p.status_financeiro === 'pendente'
       )
   );
+
+  // 3. LEMBRETES DE ESTOQUE (Estoque da fazenda em alerta mínimo + Previsão de fim de estoque nos clientes)
+  const itensEstoqueBaixoSemana = estoque.filter(
+    (item) =>
+      item.quantidade_disponivel <= item.alerta_minimo * 1.25 &&
+      isLembreteAtivo(`est-item-${item.id}`)
+  );
+  const lembretesEstoqueSemana = pedidos.filter(
+    (p) =>
+      p.data_previsao_fim_estoque &&
+      p.data_previsao_fim_estoque <= limiteSeteDiasStr &&
+      isLembreteAtivo(p.id)
+  );
+  const totalLembretesEstoque = itensEstoqueBaixoSemana.length + lembretesEstoqueSemana.length;
+
+  // 4. LEMBRETES DE PROSPECTS (Clientes em prospecção / possibilidade de negócio)
+  const lembretesProspectsSemana = contatos.filter(
+    (c) => c.status_crm === 'possibilidade' && isLembreteAtivo(c.id)
+  );
+
+  const totalLembretesPendentes =
+    lembretesPedidosSemana.length +
+    lembretesPagamentoSemana.length +
+    totalLembretesEstoque +
+    lembretesProspectsSemana.length;
 
   const contatosFiltrados = contatos.filter((c) => {
     if (filtroContato === 'todos') return true;
@@ -2018,15 +2112,15 @@ export default function CabocloAgroCRM() {
 
       {/* Conteúdo Principal conforme Aba Ativa */}
       <main className="flex-1 max-w-md w-full mx-auto px-4 pt-4 flex flex-col gap-5">
-        {/* PAINEL DE LEMBRETES DA SEMANA (Na aba central "Início") */}
-        {activeTab === 'inicio' && (lembretesPagamentoSemana.length > 0 || lembretesEstoqueSemana.length > 0 || lembretesProspectsSemana.length > 0 || lembretesRespondidos.length > 0) && (
-          <div className="bg-gradient-to-r from-amber-950/60 to-slate-900 border border-amber-500/40 rounded-2xl p-4 space-y-3 shadow-lg">
-            <div className="flex items-center justify-between">
+        {/* PAINEL DE LEMBRETES DA SEMANA SEPARADO EM 4 CATEGORIAS (Na aba central "Início") */}
+        {activeTab === 'inicio' && (
+          <div className="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-amber-500/40 rounded-2xl p-4 space-y-3.5 shadow-lg">
+            <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
-                <BellRing className="w-4 h-4 text-amber-400 animate-bounce" />
-                <span>Lembretes da Semana</span>
+                <BellRing className="w-4 h-4 text-amber-400 animate-bounce shrink-0" />
+                <span>Central de Lembretes</span>
               </div>
-              
+
               {/* Abas do painel: pendentes vs respondidos */}
               <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
                 <button
@@ -2037,7 +2131,7 @@ export default function CabocloAgroCRM() {
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  Pendentes ({lembretesPagamentoSemana.length + lembretesEstoqueSemana.length + lembretesProspectsSemana.length})
+                  Pendentes ({totalLembretesPendentes})
                 </button>
                 <button
                   onClick={() => setAbaLembretes('respondidos')}
@@ -2053,260 +2147,634 @@ export default function CabocloAgroCRM() {
             </div>
 
             {abaLembretes === 'pendentes' ? (
-              <div className="space-y-2">
-                {lembretesPagamentoSemana.length === 0 && lembretesEstoqueSemana.length === 0 && lembretesProspectsSemana.length === 0 && (
-                  <div className="text-center py-4 text-slate-400 text-xs italic">
+              <div className="space-y-3.5">
+                {/* Seletor das 4 Categorias Separadas de Lembretes */}
+                <div className="grid grid-cols-5 gap-1 bg-slate-950 p-1.5 rounded-xl border border-slate-800 text-[10px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setCategoriaLembrete('todos')}
+                    className={`py-1.5 px-1 rounded-lg text-center transition-all ${
+                      categoriaLembrete === 'todos'
+                        ? 'bg-slate-800 text-white border border-slate-600 shadow'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Todos ({totalLembretesPendentes})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCategoriaLembrete('pedidos')}
+                    className={`py-1.5 px-1 rounded-lg text-center transition-all truncate ${
+                      categoriaLembrete === 'pedidos'
+                        ? 'bg-sky-600 text-white shadow'
+                        : 'text-sky-300/80 hover:text-sky-200'
+                    }`}
+                  >
+                    📦 Pedidos ({lembretesPedidosSemana.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCategoriaLembrete('faturamentos')}
+                    className={`py-1.5 px-1 rounded-lg text-center transition-all truncate ${
+                      categoriaLembrete === 'faturamentos'
+                        ? 'bg-amber-500 text-slate-950 shadow'
+                        : 'text-amber-300/80 hover:text-amber-200'
+                    }`}
+                  >
+                    💰 Fatur. ({lembretesPagamentoSemana.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCategoriaLembrete('estoque')}
+                    className={`py-1.5 px-1 rounded-lg text-center transition-all truncate ${
+                      categoriaLembrete === 'estoque'
+                        ? 'bg-emerald-600 text-white shadow'
+                        : 'text-emerald-300/80 hover:text-emerald-200'
+                    }`}
+                  >
+                    🌾 Estoque ({totalLembretesEstoque})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCategoriaLembrete('prospects')}
+                    className={`py-1.5 px-1 rounded-lg text-center transition-all truncate ${
+                      categoriaLembrete === 'prospects'
+                        ? 'bg-purple-600 text-white shadow'
+                        : 'text-purple-300/80 hover:text-purple-200'
+                    }`}
+                  >
+                    🌱 Prosp. ({lembretesProspectsSemana.length})
+                  </button>
+                </div>
+
+                {totalLembretesPendentes === 0 && (
+                  <div className="text-center py-4 text-slate-400 text-xs italic bg-slate-950/60 rounded-xl border border-slate-800">
                     🎉 Nenhum lembrete pendente para esta semana!
                   </div>
                 )}
 
-                {/* LEMBRETES DE PAGAMENTO (EM ABERTO OU ATRASADO, PARCELAS E ADIANTAMENTO) */}
-                {lembretesPagamentoSemana.map((p) => {
-                  const c = contatos.find((cnt) => cnt.nome === p.nome_cliente || cnt.id === p.contato_id);
-                  const isAtrasado =
-                    p.status_financeiro === 'atrasado' ||
-                    Boolean(p.data_vencimento_pagamento && p.data_vencimento_pagamento < hojeStr);
-                  const valorTotal = p.valor_total || 0;
-                  const adiantamento = p.valor_adiantamento || 0;
-                  const saldoRestante = Math.max(0, valorTotal - adiantamento);
-                  const qtdParc = p.qtd_parcelas && p.qtd_parcelas > 1 ? p.qtd_parcelas : null;
-                  const valorParcela = qtdParc ? saldoRestante / qtdParc : saldoRestante;
-                  const idLembretePag = `pag-${p.id}`;
+                {/* =============================================================== */}
+                {/* PARTE 1: LEMBRETES PARA PEDIDOS & CARREGAMENTOS                 */}
+                {/* =============================================================== */}
+                {(categoriaLembrete === 'todos' || categoriaLembrete === 'pedidos') && (
+                  <div className="bg-slate-950/70 border border-sky-500/30 rounded-xl p-3 space-y-2.5">
+                    <div className="flex items-center justify-between border-b border-sky-900/40 pb-1.5">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-sky-300 flex items-center gap-1.5">
+                        <ShoppingBag className="w-3.5 h-3.5 text-sky-400" />
+                        1. Lembretes de Pedidos & Carregamentos
+                      </span>
+                      <span className="text-[10px] bg-sky-950 text-sky-300 border border-sky-800 px-2 py-0.5 rounded-full font-bold">
+                        {lembretesPedidosSemana.length}
+                      </span>
+                    </div>
 
-                  return (
-                    <div
-                      key={idLembretePag}
-                      className={`bg-slate-950/90 border rounded-xl p-3 space-y-2 ${
-                        isAtrasado ? 'border-red-600/80 ring-1 ring-red-500/30' : 'border-amber-700/70'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="font-bold text-xs text-white">{p.nome_cliente}</span>
-                            <span
-                              className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-extrabold border ${
+                    {lembretesPedidosSemana.length === 0 ? (
+                      <p className="text-[11px] text-slate-500 italic py-1">
+                        Nenhum pré-pedido ou carregamento pendente no momento.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {lembretesPedidosSemana.map((p) => {
+                          const idLembPed = `ped-${p.id}`;
+                          const etapaPed = p.etapa_pedido || 'pre_pedido';
+                          const totais = calcularTotaisPedido(p);
+                          const c = contatos.find(
+                            (cnt) => cnt.nome === p.nome_cliente || cnt.id === p.contato_id
+                          );
+
+                          return (
+                            <div
+                              key={idLembPed}
+                              className="bg-slate-900/90 border border-sky-800/50 rounded-xl p-2.5 space-y-2"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-bold text-xs text-white">
+                                      {p.nome_cliente}
+                                    </span>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded uppercase font-extrabold bg-sky-950 text-sky-300 border border-sky-700">
+                                      {etapaPed === 'pre_pedido'
+                                        ? '📝 1. Cotar Frete (Pré-Pedido)'
+                                        : etapaPed === 'aguardando_cliente'
+                                        ? '💬 2. Confirmar Valor c/ Cliente'
+                                        : '🚜 3. Carregamento Agendado'}
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] text-slate-300 block">
+                                    {p.produto} ({p.quantidade}) •{' '}
+                                    <strong className="text-emerald-400 font-mono">
+                                      R$ {totais.valorFinalCliente.toFixed(2)}
+                                    </strong>
+                                  </span>
+                                  {(p.data_carregamento || p.data_entrega) && (
+                                    <span className="text-[10px] text-amber-300 font-semibold block">
+                                      📅 Carregar: {p.data_carregamento || 'A definir'} • Entrega:{' '}
+                                      {p.data_entrega || 'A definir'}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <button
+                                  onClick={() => excluirLembrete(idLembPed)}
+                                  className="text-slate-500 hover:text-red-400 p-1 transition-colors"
+                                  title="Ocultar lembrete de pedido"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-800/80 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveTab('pedidos')}
+                                  className="bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-700/60 px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1"
+                                >
+                                  <ShoppingBag className="w-3 h-3" /> Abrir Pedido
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setAdiarModal({
+                                      id: idLembPed,
+                                      nome: `Pedido de ${p.nome_cliente}`,
+                                    })
+                                  }
+                                  className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1"
+                                >
+                                  <Clock className="w-3 h-3 text-amber-400" /> Adiar
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    abrirWhatsAppComMensagem(
+                                      p.nome_cliente,
+                                      c?.telefone,
+                                      'geral',
+                                      {
+                                        produto: p.produto || 'Silagem',
+                                        quantidade: p.quantidade || '10t',
+                                      },
+                                      {
+                                        id: idLembPed,
+                                        tipo: 'pedidos',
+                                        detalhe: `Andamento do pedido (${p.produto})`,
+                                      }
+                                    )
+                                  }
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 shadow"
+                                >
+                                  <img
+                                    src="/whatsapp.png"
+                                    alt="WhatsApp"
+                                    className="w-3.5 h-3.5 object-contain shrink-0"
+                                  />{' '}
+                                  Whats
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* =============================================================== */}
+                {/* PARTE 2: LEMBRETES PARA FATURAMENTOS & PARCELAS                 */}
+                {/* =============================================================== */}
+                {(categoriaLembrete === 'todos' || categoriaLembrete === 'faturamentos') && (
+                  <div className="bg-slate-950/70 border border-amber-500/30 rounded-xl p-3 space-y-2.5">
+                    <div className="flex items-center justify-between border-b border-amber-900/40 pb-1.5">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-amber-300 flex items-center gap-1.5">
+                        <DollarSign className="w-3.5 h-3.5 text-amber-400" />
+                        2. Lembretes de Faturamentos & Cobranças
+                      </span>
+                      <span className="text-[10px] bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full font-bold">
+                        {lembretesPagamentoSemana.length}
+                      </span>
+                    </div>
+
+                    {lembretesPagamentoSemana.length === 0 ? (
+                      <p className="text-[11px] text-slate-500 italic py-1">
+                        Nenhum faturamento pendente ou atrasado no momento.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {lembretesPagamentoSemana.map((p) => {
+                          const c = contatos.find(
+                            (cnt) => cnt.nome === p.nome_cliente || cnt.id === p.contato_id
+                          );
+                          const isAtrasado =
+                            p.status_financeiro === 'atrasado' ||
+                            Boolean(
+                              p.data_vencimento_pagamento && p.data_vencimento_pagamento < hojeStr
+                            );
+                          const totais = calcularTotaisPedido(p);
+                          const idLembretePag = `pag-${p.id}`;
+
+                          return (
+                            <div
+                              key={idLembretePag}
+                              className={`bg-slate-900/90 border rounded-xl p-3 space-y-2 ${
                                 isAtrasado
-                                  ? 'bg-red-950 text-red-300 border-red-700 animate-pulse'
-                                  : 'bg-amber-950 text-amber-300 border-amber-700'
+                                  ? 'border-red-600/80 ring-1 ring-red-500/30'
+                                  : 'border-amber-700/70'
                               }`}
                             >
-                              {isAtrasado ? '🚨 Pagamento Atrasado' : '💰 Pagamento em Aberto'}
-                            </span>
-                          </div>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-bold text-xs text-white">
+                                      {p.nome_cliente}
+                                    </span>
+                                    <span
+                                      className={`text-[9px] px-1.5 py-0.5 rounded uppercase font-extrabold border ${
+                                        isAtrasado
+                                          ? 'bg-red-950 text-red-300 border-red-700 animate-pulse'
+                                          : 'bg-amber-950 text-amber-300 border-amber-700'
+                                      }`}
+                                    >
+                                      {isAtrasado
+                                        ? '🚨 Pagamento Atrasado'
+                                        : '💰 Faturamento em Aberto'}
+                                    </span>
+                                  </div>
 
-                          <span className="text-[11px] text-emerald-300 block font-bold font-mono">
-                            Falta Receber: R$ {saldoRestante.toFixed(2)}
-                            {adiantamento > 0 && (
-                              <span className="text-slate-400 font-normal">
-                                {' '}
-                                (Total R$ {valorTotal.toFixed(2)} • Adiantou R$ {adiantamento.toFixed(2)})
-                              </span>
-                            )}
-                          </span>
+                                  <span className="text-[11px] text-emerald-300 block font-bold font-mono">
+                                    Em Aberto: R$ {totais.saldoDevedor.toFixed(2)}
+                                    {(totais.adiantamento > 0 || totais.parcelasPagas > 0) && (
+                                      <span className="text-slate-400 font-normal">
+                                        {' '}
+                                        (Total R$ {totais.valorFinalCliente.toFixed(2)} • Já pago R${' '}
+                                        {totais.valorTotalPago.toFixed(2)})
+                                      </span>
+                                    )}
+                                  </span>
 
-                          <div className="text-[10px] text-slate-300 flex flex-wrap gap-x-2 gap-y-0.5">
-                            {p.data_vencimento_pagamento && (
-                              <span className={isAtrasado ? 'text-red-300 font-bold' : 'text-amber-300 font-semibold'}>
-                                📅 Data Pagto: {p.data_vencimento_pagamento}
-                              </span>
-                            )}
-                            {qtdParc && (
-                              <span className="text-sky-300 font-semibold">
-                                💳 {qtdParc}x de R$ {valorParcela.toFixed(2)}
-                              </span>
-                            )}
-                            {p.dia_pagamento_parcelas && (
-                              <span className="text-slate-300">
-                                🗓️ Combinado: {p.dia_pagamento_parcelas}
-                              </span>
-                            )}
-                          </div>
+                                  <div className="text-[10px] text-slate-300 flex flex-wrap gap-x-2 gap-y-0.5">
+                                    {p.data_vencimento_pagamento && (
+                                      <span
+                                        className={
+                                          isAtrasado
+                                            ? 'text-red-300 font-bold'
+                                            : 'text-amber-300 font-semibold'
+                                        }
+                                      >
+                                        📅 Data Pagto: {p.data_vencimento_pagamento}
+                                      </span>
+                                    )}
+                                    {totais.qtdParcelas > 1 && (
+                                      <span className="text-sky-300 font-semibold">
+                                        💳 {totais.qtdParcelas}x de R${' '}
+                                        {totais.valorPorParcela.toFixed(2)} ({totais.parcelasPagas}/
+                                        {totais.qtdParcelas} pagas • Restam{' '}
+                                        {totais.parcelasRestantes})
+                                      </span>
+                                    )}
+                                    {p.dia_pagamento_parcelas && (
+                                      <span className="text-slate-300">
+                                        🗓️ Combinado: {p.dia_pagamento_parcelas}
+                                      </span>
+                                    )}
+                                  </div>
 
-                          <span className="text-[10px] text-slate-400 block">
-                            Pedido: {p.produto} ({p.quantidade})
-                          </span>
-                        </div>
+                                  <span className="text-[10px] text-slate-400 block">
+                                    Pedido: {p.produto} ({p.quantidade})
+                                  </span>
+                                </div>
 
-                        <button
-                          onClick={() => excluirLembrete(idLembretePag)}
-                          className="text-slate-500 hover:text-red-400 p-1 transition-colors"
-                          title="Ocultar lembrete de pagamento"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                                <button
+                                  onClick={() => excluirLembrete(idLembretePag)}
+                                  className="text-slate-500 hover:text-red-400 p-1 transition-colors"
+                                  title="Ocultar lembrete de faturamento"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-slate-800/80 flex-wrap">
+                                {/* Se for parcelado, permite confirmar a 1ª/próxima parcela deixando o resto em aberto */}
+                                {totais.qtdParcelas > 1 &&
+                                  totais.parcelasPagas < totais.qtdParcelas && (
+                                    <button
+                                      type="button"
+                                      onClick={() => p.id && confirmarParcelaPedido(p.id)}
+                                      className="bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-700/70 px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors"
+                                      title="Confirmar pagamento desta parcela e manter o restante em aberto"
+                                    >
+                                      <Check className="w-3 h-3 text-sky-400" /> Confirmar{' '}
+                                      {totais.parcelasPagas + 1}ª Parc.
+                                    </button>
+                                  )}
+
+                                {/* Opção para Quitar a Dívida Toda de uma vez */}
+                                <button
+                                  type="button"
+                                  onClick={() => p.id && quitarDividaTotalPedido(p.id)}
+                                  className="bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/60 px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors"
+                                  title="Quitar a dívida toda deste pedido"
+                                >
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Quitar Tudo
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setAdiarModal({
+                                      id: idLembretePag,
+                                      nome: `Faturamento de ${p.nome_cliente}`,
+                                    })
+                                  }
+                                  className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                                >
+                                  <Clock className="w-3 h-3 text-amber-400" /> Adiar
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    abrirWhatsAppComMensagem(
+                                      p.nome_cliente,
+                                      c?.telefone,
+                                      'cobranca_pagamento',
+                                      {
+                                        produto: p.produto || 'Silagem',
+                                        valor_restante: totais.saldoDevedor.toFixed(2),
+                                        data_vencimento:
+                                          p.data_vencimento_pagamento ||
+                                          p.dia_pagamento_parcelas ||
+                                          undefined,
+                                        info_parcelas:
+                                          totais.qtdParcelas > 1
+                                            ? `${totais.parcelasRestantes}x restantes de R$ ${totais.valorPorParcela.toFixed(2)}`
+                                            : undefined,
+                                      },
+                                      {
+                                        id: idLembretePag,
+                                        tipo: 'faturamentos',
+                                        detalhe: `Cobrança R$ ${totais.saldoDevedor.toFixed(2)} (${p.produto || 'Silagem'})`,
+                                      }
+                                    )
+                                  }
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 shadow transition-colors"
+                                >
+                                  <img
+                                    src="/whatsapp.png"
+                                    alt="WhatsApp"
+                                    className="w-3.5 h-3.5 object-contain shrink-0"
+                                  />{' '}
+                                  Whats
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-
-                      <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-900 flex-wrap">
-                        <button
-                          onClick={() => p.id && alternarStatusFinanceiro(p.id)}
-                          className="bg-emerald-950 hover:bg-emerald-900 text-emerald-300 border border-emerald-700/60 px-2 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-colors"
-                          title="Marcar pagamento como quitado/pago"
-                        >
-                          <Check className="w-3 h-3 text-emerald-400" /> Dar Baixa
-                        </button>
-
-                        <button
-                          onClick={() => setAdiarModal({ id: idLembretePag, nome: `Pagamento de ${p.nome_cliente}` })}
-                          className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
-                          title="Adiar lembrete por alguns dias"
-                        >
-                          <Clock className="w-3 h-3 text-amber-400" /> Adiar
-                        </button>
-
-                        <button
-                          onClick={() =>
-                            abrirWhatsAppComMensagem(
-                              p.nome_cliente,
-                              c?.telefone,
-                              'cobranca_pagamento',
-                              {
-                                produto: p.produto || 'Silagem',
-                                valor_restante: saldoRestante.toFixed(2),
-                                data_vencimento: p.data_vencimento_pagamento || p.dia_pagamento_parcelas || undefined,
-                                info_parcelas: qtdParc ? `${qtdParc}x de R$ ${valorParcela.toFixed(2)}` : undefined,
-                              },
-                              {
-                                id: idLembretePag,
-                                tipo: 'pagamento',
-                                detalhe: `Cobrança R$ ${saldoRestante.toFixed(2)} (${p.produto || 'Silagem'})`,
-                              }
-                            )
-                          }
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 shadow transition-colors"
-                        >
-                          <img src="/whatsapp.png" alt="WhatsApp" className="w-4 h-4 object-contain shrink-0" /> Whats
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {lembretesEstoqueSemana.map((p) => {
-                  const c = contatos.find((cnt) => cnt.nome === p.nome_cliente);
-                  return (
-                    <div
-                      key={p.id}
-                      className="bg-slate-950/80 border border-amber-800/60 rounded-xl p-3 space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-bold text-xs text-white">{p.nome_cliente}</span>
-                            <span className="text-[9px] bg-red-950 text-red-300 px-1.5 py-0.5 rounded uppercase font-bold">
-                              Estoque Fim
-                            </span>
-                          </div>
-                          <span className="text-[11px] text-amber-300 block font-medium">
-                            Previsão: {p.data_previsao_fim_estoque}
-                          </span>
-                          <span className="text-[10px] text-slate-400">
-                            {p.produto} ({p.quantidade})
-                          </span>
-                        </div>
-
-                        <button
-                          onClick={() => excluirLembrete(p.id)}
-                          className="text-slate-500 hover:text-red-400 p-1 transition-colors"
-                          title="Excluir lembrete"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-
-                      <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-900">
-                        <button
-                          onClick={() => setAdiarModal({ id: p.id || '', nome: p.nome_cliente })}
-                          className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
-                          title="Adiar por alguns dias"
-                        >
-                          <Clock className="w-3 h-3 text-amber-400" /> Adiar
-                        </button>
-
-                        <button
-                          onClick={() =>
-                            abrirWhatsAppComMensagem(
-                              p.nome_cliente,
-                              c?.telefone,
-                              'reordenar',
-                              {
-                                data_compra: p.data_compra,
-                                produto: p.produto || 'Silagem',
-                                quantidade: p.quantidade || '10t',
-                              },
-                              {
-                                id: p.id || '',
-                                tipo: 'estoque',
-                                detalhe: `${p.produto || 'Silagem'} (${p.quantidade || '10t'})`,
-                              }
-                            )
-                          }
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 shadow transition-colors"
-                        >
-                          <img src="/whatsapp.png" alt="WhatsApp" className="w-4 h-4 object-contain shrink-0" /> Whats
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {lembretesProspectsSemana.map((c) => (
-                  <div
-                    key={c.id}
-                    className="bg-slate-950/80 border border-slate-800 rounded-xl p-3 space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-xs text-white">{c.nome}</span>
-                          <span className="text-[9px] bg-amber-950 text-amber-400 px-1.5 py-0.5 rounded uppercase font-bold">
-                            Prospect
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-slate-400 block italic">
-                          &quot;{c.observacao || 'Aguardando retorno sobre orçamento'}&quot;
-                        </span>
-                      </div>
-
-                      <button
-                        onClick={() => excluirLembrete(c.id)}
-                        className="text-slate-500 hover:text-red-400 p-1 transition-colors"
-                        title="Excluir lembrete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-900">
-                      <button
-                        onClick={() => setAdiarModal({ id: c.id || '', nome: c.nome })}
-                        className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
-                        title="Adiar por alguns dias"
-                      >
-                        <Clock className="w-3 h-3 text-amber-400" /> Adiar
-                      </button>
-
-                      <button
-                        onClick={() =>
-                          abrirWhatsAppComMensagem(
-                            c.nome,
-                            c.telefone,
-                            'prospeccao',
-                            undefined,
-                            {
-                              id: c.id || '',
-                              tipo: 'prospect',
-                              detalhe: c.observacao || 'Orçamento pendente',
-                            }
-                          )
-                        }
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 shadow transition-colors"
-                      >
-                        <img src="/whatsapp.png" alt="WhatsApp" className="w-4 h-4 object-contain shrink-0" /> Whats
-                      </button>
-                    </div>
+                    )}
                   </div>
-                ))}
+                )}
+
+                {/* =============================================================== */}
+                {/* PARTE 3: LEMBRETES PARA ESTOQUE & REPOSIÇÃO                     */}
+                {/* =============================================================== */}
+                {(categoriaLembrete === 'todos' || categoriaLembrete === 'estoque') && (
+                  <div className="bg-slate-950/70 border border-emerald-500/30 rounded-xl p-3 space-y-2.5">
+                    <div className="flex items-center justify-between border-b border-emerald-900/40 pb-1.5">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-emerald-300 flex items-center gap-1.5">
+                        <Package className="w-3.5 h-3.5 text-emerald-400" />
+                        3. Lembretes de Estoque & Reposição
+                      </span>
+                      <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                        {totalLembretesEstoque}
+                      </span>
+                    </div>
+
+                    {totalLembretesEstoque === 0 ? (
+                      <p className="text-[11px] text-slate-500 italic py-1">
+                        Estoque da fazenda e dos clientes em dia.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {/* Alertas de Estoque Baixo na Fazenda */}
+                        {itensEstoqueBaixoSemana.map((item) => {
+                          const idEst = `est-item-${item.id}`;
+                          return (
+                            <div
+                              key={idEst}
+                              className="bg-slate-900/90 border border-red-700/60 rounded-xl p-2.5 space-y-2"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-xs text-white">
+                                      {item.nome}
+                                    </span>
+                                    <span className="text-[9px] bg-red-950 text-red-300 border border-red-800 px-1.5 py-0.5 rounded uppercase font-extrabold">
+                                      ⚠️ Estoque Baixo Fazenda
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] text-amber-300 block font-semibold">
+                                    Disponível: {item.quantidade_disponivel} {item.unidade_medida}{' '}
+                                    (Mínimo: {item.alerta_minimo})
+                                  </span>
+                                </div>
+
+                                <button
+                                  onClick={() => excluirLembrete(idEst)}
+                                  className="text-slate-500 hover:text-red-400 p-1"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              <div className="flex justify-end gap-1.5 pt-1 border-t border-slate-800/80">
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveTab('estoque')}
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1"
+                                >
+                                  <Package className="w-3 h-3" /> Repor no Estoque
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Previsão de Fim de Estoque de Silagem nos Clientes (Recompra) */}
+                        {lembretesEstoqueSemana.map((p) => {
+                          const c = contatos.find((cnt) => cnt.nome === p.nome_cliente);
+                          return (
+                            <div
+                              key={p.id}
+                              className="bg-slate-900/90 border border-emerald-800/60 rounded-xl p-2.5 space-y-2"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="font-bold text-xs text-white">
+                                      {p.nome_cliente}
+                                    </span>
+                                    <span className="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-800 px-1.5 py-0.5 rounded uppercase font-bold">
+                                      🌾 Fim de Estoque no Cliente
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] text-amber-300 block font-medium">
+                                    Previsão de término: {p.data_previsao_fim_estoque}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">
+                                    Última compra: {p.produto} ({p.quantidade})
+                                  </span>
+                                </div>
+
+                                <button
+                                  onClick={() => excluirLembrete(p.id)}
+                                  className="text-slate-500 hover:text-red-400 p-1 transition-colors"
+                                  title="Excluir lembrete"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
+                              <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-800/80">
+                                <button
+                                  onClick={() =>
+                                    setAdiarModal({ id: p.id || '', nome: p.nome_cliente })
+                                  }
+                                  className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                                >
+                                  <Clock className="w-3 h-3 text-amber-400" /> Adiar
+                                </button>
+
+                                <button
+                                  onClick={() =>
+                                    abrirWhatsAppComMensagem(
+                                      p.nome_cliente,
+                                      c?.telefone,
+                                      'reordenar',
+                                      {
+                                        data_compra: p.data_compra,
+                                        produto: p.produto || 'Silagem',
+                                        quantidade: p.quantidade || '10t',
+                                      },
+                                      {
+                                        id: p.id || '',
+                                        tipo: 'estoque',
+                                        detalhe: `${p.produto || 'Silagem'} (${p.quantidade || '10t'})`,
+                                      }
+                                    )
+                                  }
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 shadow transition-colors"
+                                >
+                                  <img
+                                    src="/whatsapp.png"
+                                    alt="WhatsApp"
+                                    className="w-3.5 h-3.5 object-contain shrink-0"
+                                  />{' '}
+                                  Oferecer Reposição
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* =============================================================== */}
+                {/* PARTE 4: LEMBRETES PARA PROSPECTS (NOVOS CLIENTES / ORÇAMENTOS) */}
+                {/* =============================================================== */}
+                {(categoriaLembrete === 'todos' || categoriaLembrete === 'prospects') && (
+                  <div className="bg-slate-950/70 border border-purple-500/30 rounded-xl p-3 space-y-2.5">
+                    <div className="flex items-center justify-between border-b border-purple-900/40 pb-1.5">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-purple-300 flex items-center gap-1.5">
+                        <Users className="w-3.5 h-3.5 text-purple-400" />
+                        4. Lembretes de Prospects (Em Negociação)
+                      </span>
+                      <span className="text-[10px] bg-purple-950 text-purple-300 border border-purple-800 px-2 py-0.5 rounded-full font-bold">
+                        {lembretesProspectsSemana.length}
+                      </span>
+                    </div>
+
+                    {lembretesProspectsSemana.length === 0 ? (
+                      <p className="text-[11px] text-slate-500 italic py-1">
+                        Nenhum prospect pendente de retorno nesta semana.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {lembretesProspectsSemana.map((c) => (
+                          <div
+                            key={c.id}
+                            className="bg-slate-900/90 border border-purple-800/50 rounded-xl p-2.5 space-y-2"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-bold text-xs text-white">{c.nome}</span>
+                                  <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-700 px-1.5 py-0.5 rounded uppercase font-bold">
+                                    🌱 Prospect
+                                  </span>
+                                </div>
+                                {c.quantidade_animais && (
+                                  <span className="text-[10px] text-emerald-300 block">
+                                    🐄 Rebanho: {c.quantidade_animais}
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-slate-400 block italic">
+                                  &quot;{c.observacao || 'Aguardando retorno sobre orçamento'}&quot;
+                                </span>
+                              </div>
+
+                              <button
+                                onClick={() => excluirLembrete(c.id)}
+                                className="text-slate-500 hover:text-red-400 p-1 transition-colors"
+                                title="Excluir lembrete"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-800/80">
+                              <button
+                                onClick={() => setAdiarModal({ id: c.id || '', nome: c.nome })}
+                                className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition-colors"
+                              >
+                                <Clock className="w-3 h-3 text-amber-400" /> Adiar
+                              </button>
+
+                              <button
+                                onClick={() =>
+                                  abrirWhatsAppComMensagem(
+                                    c.nome,
+                                    c.telefone,
+                                    'prospeccao',
+                                    undefined,
+                                    {
+                                      id: c.id || '',
+                                      tipo: 'prospect',
+                                      detalhe: c.observacao || 'Orçamento pendente',
+                                    }
+                                  )
+                                }
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 shadow transition-colors"
+                              >
+                                <img
+                                  src="/whatsapp.png"
+                                  alt="WhatsApp"
+                                  className="w-3.5 h-3.5 object-contain shrink-0"
+                                />{' '}
+                                Whats
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="space-y-2">
@@ -2331,7 +2799,9 @@ export default function CabocloAgroCRM() {
                           Contatado em {resp.data_resposta}
                         </span>
                         {resp.detalhe && (
-                          <span className="text-[10px] text-slate-500 italic block">{resp.detalhe}</span>
+                          <span className="text-[10px] text-slate-500 italic block">
+                            {resp.detalhe}
+                          </span>
                         )}
                       </div>
 
@@ -3452,28 +3922,51 @@ export default function CabocloAgroCRM() {
                   <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">
                     Lançamentos Financeiros ({pedidos.length})
                   </h2>
-                  {pedidos.map((p) => (
-                    <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center justify-between text-xs shadow-sm">
-                      <div>
-                        <span className="font-bold text-white block">{p.nome_cliente}</span>
-                        <span className="text-[11px] text-slate-400">
-                          {p.produto} • R$ {p.valor_total ? p.valor_total.toFixed(2) : '0.00'}
-                        </span>
-                      </div>
+                  {pedidos.map((p) => {
+                    const totais = calcularTotaisPedido(p);
+                    return (
+                      <div key={p.id} className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center justify-between gap-2 text-xs shadow-sm">
+                        <div>
+                          <span className="font-bold text-white block">{p.nome_cliente}</span>
+                          <span className="text-[11px] text-slate-400 block">
+                            {p.produto} • R$ {totais.valorFinalCliente.toFixed(2)}
+                          </span>
+                          {totais.qtdParcelas > 1 && p.status_financeiro !== 'pago' && (
+                            <span className="text-[10px] text-sky-300 font-semibold block">
+                              💳 Parcelas: {totais.parcelasPagas}/{totais.qtdParcelas} pagas • Aberto: R${' '}
+                              {totais.saldoDevedor.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
 
-                      <button
-                        onClick={() => p.id && alternarStatusFinanceiro(p.id)}
-                        className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer active:scale-95 ${
-                          p.status_financeiro === 'pago'
-                            ? 'bg-emerald-950 text-emerald-400 border-emerald-800 hover:bg-emerald-900'
-                            : 'bg-amber-950 text-amber-400 border-amber-800 hover:bg-amber-900'
-                        }`}
-                        title="Clique para alternar o status do pagamento"
-                      >
-                        {p.status_financeiro === 'pago' ? '✅ PAGO' : '⏳ PENDENTE'}
-                      </button>
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                          {totais.qtdParcelas > 1 &&
+                            p.status_financeiro !== 'pago' &&
+                            totais.parcelasPagas < totais.qtdParcelas && (
+                              <button
+                                onClick={() => p.id && confirmarParcelaPedido(p.id)}
+                                className="px-2 py-1 rounded text-[10px] font-bold bg-sky-950 text-sky-300 border border-sky-800 hover:bg-sky-900 transition-all cursor-pointer"
+                                title="Confirmar próxima parcela e deixar o restante em aberto"
+                              >
+                                ✓ {totais.parcelasPagas + 1}ª Parc.
+                              </button>
+                            )}
+
+                          <button
+                            onClick={() => p.id && alternarStatusFinanceiro(p.id)}
+                            className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer active:scale-95 ${
+                              p.status_financeiro === 'pago'
+                                ? 'bg-emerald-950 text-emerald-400 border-emerald-800 hover:bg-emerald-900'
+                                : 'bg-amber-950 text-amber-400 border-amber-800 hover:bg-amber-900'
+                            }`}
+                            title="Clique para quitar a dívida toda ou reabrir pagamento"
+                          >
+                            {p.status_financeiro === 'pago' ? '✅ QUITADO' : '💰 QUITAR TUDO'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

@@ -85,6 +85,7 @@ export interface Pedido {
   data_previsao_fim_estoque?: string | null;
   data_vencimento_pagamento?: string | null;
   qtd_parcelas?: number | null;
+  parcelas_pagas?: number | null;
   valor_adiantamento?: number | null;
   dia_pagamento_parcelas?: string | null;
   // Fluxo Operacional: Pré-Pedido -> Frete -> Cliente -> Agendamento/Funcionário -> Carregamento Real
@@ -324,6 +325,7 @@ export async function salvarPedidoNoBanco(pedido: Pedido): Promise<boolean> {
     itens_venda: pedido.itens_venda || null,
     data_vencimento_pagamento: pedido.data_vencimento_pagamento || null,
     qtd_parcelas: pedido.qtd_parcelas ?? null,
+    parcelas_pagas: pedido.parcelas_pagas ?? null,
     valor_adiantamento: pedido.valor_adiantamento ?? null,
     dia_pagamento_parcelas: pedido.dia_pagamento_parcelas || null,
     etapa_pedido: pedido.etapa_pedido || 'pre_pedido',
@@ -438,6 +440,8 @@ export function parsePedidosDoBanco(rows: any[]): Pedido[] {
       data_vencimento_pagamento:
         meta.data_vencimento_pagamento ?? anterior?.data_vencimento_pagamento ?? null,
       qtd_parcelas: meta.qtd_parcelas ?? anterior?.qtd_parcelas ?? null,
+      parcelas_pagas:
+        meta.parcelas_pagas != null ? Number(meta.parcelas_pagas) : anterior?.parcelas_pagas ?? 0,
       valor_adiantamento:
         meta.valor_adiantamento != null
           ? Number(meta.valor_adiantamento)

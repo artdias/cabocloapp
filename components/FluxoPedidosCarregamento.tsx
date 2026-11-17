@@ -75,6 +75,30 @@ export function calcularTotaisPedido(pedido: Pedido) {
       : Number(pedido.quantidade_toneladas_num || 0);
   const sacosFinal = Number(pedido.sacos_real || 0);
 
+  const qtdParcelas =
+    pedido.qtd_parcelas && Number(pedido.qtd_parcelas) > 1 ? Number(pedido.qtd_parcelas) : 1;
+  const adiantamento = Number(pedido.valor_adiantamento || 0);
+  const baseParcelavel = Math.max(0, valorFinalCliente - adiantamento);
+  const valorPorParcela = qtdParcelas > 0 ? baseParcelavel / qtdParcelas : baseParcelavel;
+
+  const parcelasPagasBruto = Math.min(
+    qtdParcelas,
+    Math.max(0, Number(pedido.parcelas_pagas || 0))
+  );
+  const parcelasPagas =
+    pedido.status_financeiro === 'pago' ? qtdParcelas : parcelasPagasBruto;
+  const parcelasRestantes = Math.max(0, qtdParcelas - parcelasPagas);
+
+  const valorPagoParcelas = parcelasPagas * valorPorParcela;
+  const valorTotalPago =
+    pedido.status_financeiro === 'pago'
+      ? valorFinalCliente
+      : Math.min(valorFinalCliente, adiantamento + valorPagoParcelas);
+  const saldoDevedor =
+    pedido.status_financeiro === 'pago'
+      ? 0
+      : Math.max(0, valorFinalCliente - valorTotalPago);
+
   return {
     valorBase,
     valorFrete,
@@ -93,6 +117,14 @@ export function calcularTotaisPedido(pedido: Pedido) {
     lucroLiquidoPedido: lucroLiquido,
     toneladasFinal,
     sacosFinal,
+    // Controle de Parcelas e Saldo Devedor
+    qtdParcelas,
+    parcelasPagas,
+    parcelasRestantes,
+    adiantamento,
+    valorPorParcela,
+    valorTotalPago,
+    saldoDevedor,
   };
 }
 
@@ -582,17 +614,24 @@ export function FluxoPedidosCarregamento({
                     {(pedido.data_vencimento_pagamento ||
                       valAdiantado > 0 ||
                       qtdParcelasPed ||
-                      pedido.dia_pagamento_parcelas) && (
+                      pedido.dia_pagamento_parcelas ||
+                      totais.parcelasPagas > 0) && (
                       <div className="pt-1.5 mt-1 border-t border-slate-800/80 text-[10px] text-slate-300 flex flex-wrap gap-x-3 gap-y-0.5">
                         {valAdiantado > 0 && (
                           <span>
-                            💵 Adiantou: <strong>R$ {valAdiantado.toFixed(2)}</strong> (Falta R${' '}
-                            {saldoRestantePed.toFixed(2)})
+                            💵 Adiantou: <strong>R$ {valAdiantado.toFixed(2)}</strong>
                           </span>
                         )}
                         {qtdParcelasPed && (
                           <span className="text-sky-300 font-semibold">
-                            💳 {qtdParcelasPed}x de R$ {(saldoRestantePed / qtdParcelasPed).toFixed(2)}
+                            💳 {qtdParcelasPed}x de R$ {totais.valorPorParcela.toFixed(2)} (
+                            {totais.parcelasPagas}/{qtdParcelasPed} pagas • Aberto: R${' '}
+                            {totais.saldoDevedor.toFixed(2)})
+                          </span>
+                        )}
+                        {!qtdParcelasPed && totais.saldoDevedor > 0 && (
+                          <span className="text-amber-300 font-semibold">
+                            💰 Falta Receber: R$ {totais.saldoDevedor.toFixed(2)}
                           </span>
                         )}
                         {pedido.data_vencimento_pagamento && (
@@ -1008,63 +1047,286 @@ export function FluxoPedidosCarregamento({
                   )}
 
                   {/* =============================================================== */}
-                  {/* PAINEL DA ETAPA 4: PEDIDO CARREGADO / FINALIZADO                */}
+                  {/* PAINEL DA ETAPA 4: PEDIDO CARREGADO / FINALIZADO + PAGAMENTOS   */}
                   {/* =============================================================== */}
                   {etapa === 'carregado' && (
-                    <div className="bg-emerald-950/30 border border-emerald-700/40 rounded-xl p-2.5 flex items-center justify-between gap-2 text-xs">
-                      <div className="text-[11px] text-emerald-200">
-                        <span className="font-bold block">
-                          ✅ Carga Finalizada ({pedido.toneladas_real ?? qtdTon}t
-                          {pedido.sacos_real ? ` • ${pedido.sacos_real} sacos` : ''})
-                        </span>
-                        {totais.custoInternoTotal > 0 && (
-                          <span className="text-[10px] text-slate-400">
-                            Custo Interno: R$ {totais.custoInternoTotal.toFixed(2)} • Líquido: R${' '}
-                            {totais.lucroLiquido.toFixed(2)}
+                    <div className="bg-emerald-950/25 border border-emerald-700/40 rounded-xl p-3 space-y-3 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[11px] text-emerald-200">
+                          <span className="font-bold block">
+                            ✅ Carga Finalizada ({pedido.toneladas_real ?? qtdTon}t
+                            {pedido.sacos_real ? ` • ${pedido.sacos_real} sacos` : ''})
                           </span>
-                        )}
+                          {totais.custoInternoTotal > 0 && (
+                            <span className="text-[10px] text-slate-400">
+                              Custo Interno: R$ {totais.custoInternoTotal.toFixed(2)} • Líquido: R${' '}
+                              {totais.lucroLiquido.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => abrirModalConferenciaCarga(pedido)}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1"
+                          >
+                            <Scale className="w-3 h-3 text-amber-400" /> Ajustar Carga
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const extrasClienteTxt = (pedido.custos_extras || [])
+                                .filter((e) => e.tipo === 'repassar_cliente')
+                                .map((e) => `\n• ${e.descricao}: R$ ${Number(e.valor).toFixed(2)}`)
+                                .join('');
+                              onDispararWhatsApp(
+                                clienteObj?.telefone,
+                                pedido.nome_cliente,
+                                `🌾 *CARGA PRONTA / RESUMO FINAL — CABOCLO SILAGEM*\nOlá ${
+                                  pedido.nome_cliente
+                                }! Seu caminhão foi carregado:\n• Produto: ${
+                                  pedido.produto
+                                }\n• Quantidade Final Carregada: *${
+                                  pedido.toneladas_real ?? qtdTon
+                                } toneladas*${
+                                  pedido.sacos_real ? ` (*${pedido.sacos_real} sacos*)` : ''
+                                }\n• Valor da Silagem: R$ ${totais.valorBase.toFixed(2)}${
+                                  totais.freteRepassado > 0
+                                    ? `\n• Frete: R$ ${totais.freteRepassado.toFixed(2)}`
+                                    : ''
+                                }${extrasClienteTxt}\n• *Valor Total Final: R$ ${totais.valorFinalCliente.toFixed(
+                                  2
+                                )}*`
+                              );
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1"
+                          >
+                            <img src="/whatsapp.png" alt="WA" className="w-3.5 h-3.5" /> Enviar Final
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => abrirModalConferenciaCarga(pedido)}
-                          className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1"
-                        >
-                          <Scale className="w-3 h-3 text-amber-400" /> Ajustar Carga
-                        </button>
+                      {/* BLOCO DE CONFIRMAÇÃO DE PAGAMENTO NO ESTÁGIO FINAL */}
+                      <div className="bg-slate-950/90 border border-slate-800 rounded-xl p-2.5 space-y-2.5">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="text-[11px] font-extrabold text-amber-300 uppercase flex items-center gap-1">
+                            <DollarSign className="w-3.5 h-3.5 text-amber-400" /> Confirmação de Pagamento Final
+                          </span>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const extrasClienteTxt = (pedido.custos_extras || [])
-                              .filter((e) => e.tipo === 'repassar_cliente')
-                              .map((e) => `\n• ${e.descricao}: R$ ${Number(e.valor).toFixed(2)}`)
-                              .join('');
-                            onDispararWhatsApp(
-                              clienteObj?.telefone,
-                              pedido.nome_cliente,
-                              `🌾 *CARGA PRONTA / RESUMO FINAL — CABOCLO SILAGEM*\nOlá ${
-                                pedido.nome_cliente
-                              }! Seu caminhão foi carregado:\n• Produto: ${
-                                pedido.produto
-                              }\n• Quantidade Final Carregada: *${
-                                pedido.toneladas_real ?? qtdTon
-                              } toneladas*${
-                                pedido.sacos_real ? ` (*${pedido.sacos_real} sacos*)` : ''
-                              }\n• Valor da Silagem: R$ ${totais.valorBase.toFixed(2)}${
-                                totais.freteRepassado > 0
-                                  ? `\n• Frete: R$ ${totais.freteRepassado.toFixed(2)}`
-                                  : ''
-                              }${extrasClienteTxt}\n• *Valor Total Final: R$ ${totais.valorFinalCliente.toFixed(
-                                2
-                              )}*`
-                            );
-                          }}
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1"
-                        >
-                          <img src="/whatsapp.png" alt="WA" className="w-3.5 h-3.5" /> Enviar Final
-                        </button>
+                          {/* Seletor rápido de modalidade: À vista ou Parcelado */}
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-slate-400">Parcelas:</span>
+                            <select
+                              value={totais.qtdParcelas}
+                              onChange={(e) => {
+                                const novaQtd = Number(e.target.value) || 1;
+                                const novasPagas = Math.min(totais.parcelasPagas, novaQtd);
+                                onAtualizarPedido({
+                                  ...pedido,
+                                  qtd_parcelas: novaQtd > 1 ? novaQtd : null,
+                                  parcelas_pagas: novasPagas,
+                                  status_financeiro:
+                                    novasPagas >= novaQtd && pedido.status_financeiro === 'pago'
+                                      ? 'pago'
+                                      : 'pendente',
+                                });
+                              }}
+                              className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-0.5 text-[11px] text-white font-bold outline-none focus:border-amber-500"
+                            >
+                              <option value={1}>À Vista (1x)</option>
+                              <option value={2}>2x Parcelado</option>
+                              <option value={3}>3x Parcelado</option>
+                              <option value={4}>4x Parcelado</option>
+                              <option value={5}>5x Parcelado</option>
+                              <option value={6}>6x Parcelado</option>
+                              <option value={8}>8x Parcelado</option>
+                              <option value={10}>10x Parcelado</option>
+                              <option value={12}>12x Parcelado</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {pedido.status_financeiro === 'pago' ? (
+                          <div className="bg-emerald-950/60 border border-emerald-700/70 rounded-xl p-2.5 flex items-center justify-between gap-2">
+                            <div>
+                              <span className="text-xs font-extrabold text-emerald-300 block">
+                                ✅ Dívida Totalmente Quitada!
+                              </span>
+                              <span className="text-[10px] text-emerald-200/80">
+                                Total recebido: R$ {totais.valorFinalCliente.toFixed(2)}
+                                {totais.qtdParcelas > 1
+                                  ? ` (${totais.qtdParcelas}/${totais.qtdParcelas} parcelas pagas)`
+                                  : ''}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onAtualizarPedido({
+                                  ...pedido,
+                                  status_financeiro: 'pendente',
+                                  parcelas_pagas:
+                                    totais.qtdParcelas > 1 ? Math.max(0, totais.qtdParcelas - 1) : 0,
+                                })
+                              }
+                              className="bg-slate-900 hover:bg-slate-800 text-amber-300 border border-amber-700/50 px-2.5 py-1 rounded-lg text-[10px] font-bold shrink-0"
+                            >
+                              ↩️ Reabrir
+                            </button>
+                          </div>
+                        ) : totais.qtdParcelas > 1 ? (
+                          /* MODO PARCELADO: Confirmar 1ª/próxima parcela (deixar resto em aberto) OU Quitar Dívida Toda */
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-[11px] bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                              <div>
+                                <span className="text-sky-300 font-bold block">
+                                  💳 {totais.qtdParcelas}x de R$ {totais.valorPorParcela.toFixed(2)}
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                  Pagas: <strong className="text-emerald-400">{totais.parcelasPagas}</strong> • Em aberto:{' '}
+                                  <strong className="text-amber-300">{totais.parcelasRestantes}</strong>
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] text-slate-400 block">Saldo Restante</span>
+                                <span className="text-xs font-extrabold text-amber-400 font-mono">
+                                  R$ {totais.saldoDevedor.toFixed(2)}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Pílulas visuais de cada parcela */}
+                            <div className="flex flex-wrap gap-1">
+                              {Array.from({ length: totais.qtdParcelas }).map((_, idxParc) => {
+                                const numParc = idxParc + 1;
+                                const isPaga = numParc <= totais.parcelasPagas;
+                                return (
+                                  <button
+                                    key={numParc}
+                                    type="button"
+                                    onClick={() => {
+                                      // Permite clicar na parcela para marcar até ela ou desmarcar
+                                      const novoPagas = isPaga ? numParc - 1 : numParc;
+                                      const quitouTudo = novoPagas >= totais.qtdParcelas;
+                                      onAtualizarPedido({
+                                        ...pedido,
+                                        parcelas_pagas: novoPagas,
+                                        status_financeiro: quitouTudo ? 'pago' : 'pendente',
+                                      });
+                                    }}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all ${
+                                      isPaga
+                                        ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                                        : 'bg-slate-900 text-amber-300 border-amber-800/60 hover:border-amber-500'
+                                    }`}
+                                    title="Clique para confirmar ou desmarcar esta parcela"
+                                  >
+                                    {isPaga ? `✅ ${numParc}ª Paga` : `⏳ ${numParc}ª Aberta`}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-0.5">
+                              {/* Botão 1: Confirmar a 1ª (ou próxima) parcela e deixar o resto em aberto */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const proxParcela = Math.min(
+                                    totais.qtdParcelas,
+                                    totais.parcelasPagas + 1
+                                  );
+                                  const quitouTudo = proxParcela >= totais.qtdParcelas;
+                                  onAtualizarPedido({
+                                    ...pedido,
+                                    parcelas_pagas: proxParcela,
+                                    status_financeiro: quitouTudo ? 'pago' : 'pendente',
+                                  });
+                                }}
+                                className="bg-sky-600 hover:bg-sky-500 text-white py-2 px-2.5 rounded-xl font-extrabold text-[11px] flex items-center justify-center gap-1 shadow transition-all active:scale-95"
+                              >
+                                <Check className="w-3.5 h-3.5 shrink-0" />
+                                <span>
+                                  Confirmar {totais.parcelasPagas + 1}ª Parcela (R${' '}
+                                  {totais.valorPorParcela.toFixed(2)})
+                                  {totais.parcelasPagas + 1 < totais.qtdParcelas
+                                    ? ' • Resto em Aberto'
+                                    : ''}
+                                </span>
+                              </button>
+
+                              {/* Botão 2: Quitar a dívida toda de uma vez */}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onAtualizarPedido({
+                                    ...pedido,
+                                    parcelas_pagas: totais.qtdParcelas,
+                                    status_financeiro: 'pago',
+                                  })
+                                }
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white py-2 px-2.5 rounded-xl font-extrabold text-[11px] flex items-center justify-center gap-1 shadow transition-all active:scale-95"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                <span>
+                                  Quitar Dívida Toda (R$ {totais.saldoDevedor.toFixed(2)})
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* MODO À VISTA (1x): Confirmar Pagamento Total OU Parcelar confirmando a 1ª */
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-[11px] bg-slate-900/90 p-2 rounded-lg border border-slate-800">
+                              <span className="text-slate-300">
+                                Valor a Receber:{' '}
+                                <strong className="text-amber-300 font-mono">
+                                  R$ {totais.saldoDevedor.toFixed(2)}
+                                </strong>
+                              </span>
+                              <span className="text-[10px] text-amber-400 font-bold uppercase">
+                                ⏳ Em Aberto
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onAtualizarPedido({
+                                    ...pedido,
+                                    parcelas_pagas: 1,
+                                    status_financeiro: 'pago',
+                                  })
+                                }
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white py-2 px-2.5 rounded-xl font-extrabold text-[11px] flex items-center justify-center gap-1 shadow transition-all active:scale-95"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                <span>
+                                  Confirmar Pagamento / Quitar Dívida (R${' '}
+                                  {totais.saldoDevedor.toFixed(2)})
+                                </span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onAtualizarPedido({
+                                    ...pedido,
+                                    qtd_parcelas: 2,
+                                    parcelas_pagas: 1,
+                                    status_financeiro: 'pendente',
+                                  })
+                                }
+                                className="bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-700/70 py-2 px-2.5 rounded-xl font-bold text-[11px] flex items-center justify-center gap-1 transition-all active:scale-95"
+                              >
+                                <span>💳 Parcelar: Confirmar 1ª e Deixar Resto Aberto</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
