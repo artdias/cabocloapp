@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manual de Uso — Caboclo Agro CRM (Silagem por Voz)</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 16mm 14mm 16mm 14mm;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+      color: #1e293b;
+      line-height: 1.5;
+      font-size: 10.5pt;
+      background: #ffffff;
+    }
+    .no-print-bar {
+      background: #064e3b;
+      color: #ffffff;
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+    .no-print-bar button {
+      background: #10b981;
+      color: #ffffff;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 6px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 10pt;
+    }
+    .no-print-bar button:hover {
+      background: #059669;
+    }
+    @media print {
+      .no-print-bar {
+        display: none !important;
+      }
+      .page-break {
+        page-break-before: always;
+      }
+    }
+    .container {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 20px 10px;
+    }
+    /* Header / Capa */
+    .cover-header {
+      background: linear-gradient(135deg, #064e3b 0%, #047857 100%);
+      color: #ffffff;
+      padding: 28px 30px;
+      border-radius: 12px;
+      margin-bottom: 22px;
+      border-left: 8px solid #f59e0b;
+    }
+    .cover-header .badge-top {
+      display: inline-block;
+      background: rgba(255, 255, 255, 0.18);
+      color: #fde68a;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 8.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 8px;
+    }
+    .cover-header h1 {
+      font-size: 21pt;
+      font-weight: 800;
+      margin-bottom: 6px;
+      letter-spacing: -0.3px;
+    }
+    .cover-header p {
+      font-size: 10.5pt;
+      color: #d1fae5;
+    }
+    /* Sumário / Índice */
+    .toc-box {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 18px 22px;
+      margin-bottom: 22px;
+    }
+    .toc-box h2 {
+      font-size: 13pt;
+      color: #064e3b;
+      margin-bottom: 10px;
+      border-bottom: 2px solid #10b981;
+      padding-bottom: 5px;
+    }
+    .toc-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 20px;
+    }
+    .toc-item {
+      font-size: 9.8pt;
+      color: #334155;
+    }
+    .toc-item strong {
+      color: #0f172a;
+    }
+    /* Títulos de Seção */
+    .section {
+      margin-bottom: 22px;
+      break-inside: avoid-page;
+    }
+    .section-header {
+      background: #ecfdf5;
+      border-left: 5px solid #059669;
+      padding: 8px 14px;
+      border-radius: 0 8px 8px 0;
+      margin-bottom: 12px;
+    }
+    .section-header h2 {
+      font-size: 13.5pt;
+      color: #064e3b;
+      font-weight: 800;
+    }
+    .section-header .path-subtitle {
+      font-size: 9pt;
+      color: #047857;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    h3 {
+      font-size: 11pt;
+      color: #0f172a;
+      margin: 12px 0 6px 0;
+      font-weight: 700;
+    }
+    p {
+      margin-bottom: 8px;
+    }
+    ul, ol {
+      margin-left: 20px;
+      margin-bottom: 10px;
+    }
+    li {
+      margin-bottom: 4px;
+    }
+    /* Path Pill */
+    .path-pill {
+      display: inline-block;
+      background: #f1f5f9;
+      border: 1px solid #94a3b8;
+      color: #0f172a;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 8.8pt;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 5px;
+      margin: 2px 0;
+    }
+    /* Tabela de Caminhos */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 18px 0;
+      font-size: 9.2pt;
+    }
+    th {
+      background: #064e3b;
+      color: #ffffff;
+      text-align: left;
+      padding: 8px 10px;
+      font-weight: 700;
+    }
+    td {
+      padding: 7px 10px;
+      border-bottom: 1px solid #e2e8f0;
+      vertical-align: top;
+    }
+    tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+    /* Callout boxes */
+    .tip-box {
+      background: #fffbeb;
+      border: 1px solid #fcd34d;
+      border-left: 5px solid #f59e0b;
+      padding: 10px 14px;
+      border-radius: 6px;
+      margin: 10px 0;
+      font-size: 9.5pt;
+    }
+    .tip-box strong {
+      color: #92400e;
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .card-box {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #ffffff;
+    }
+    .card-box h4 {
+      font-size: 10pt;
+      color: #065f46;
+      margin-bottom: 4px;
+    }
+    .footer-note {
+      margin-top: 28px;
+      padding-top: 12px;
+      border-top: 1px solid #cbd5e1;
+      text-align: center;
+      font-size: 8.5pt;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="no-print-bar">
+    <div>
+      <strong>Caboclo Agro CRM</strong> — Manual de Uso e Índice de Caminhos
+    </div>
+    <button onclick="window.print()">🖨️ Salvar como PDF / Imprimir</button>
+  </div>
+
+  <div class="container">
+    <!-- CAPA / CABEÇALHO -->
+    <div class="cover-header">
+      <div class="badge-top">Guia Oficial do Usuário • Agro Caboclo</div>
+      <h1>Manual de Uso — Caboclo Agro CRM</h1>
+      <p>Índice Completo de Funcionalidades, Mapa de Caminhos do Sistema e Guia Operacional Passo a Passo</p>
+    </div>
+
+    <!-- SUMÁRIO / ÍNDICE DE FUNCIONALIDADES -->
+    <div class="toc-box">
+      <h2>📑 Índice Geral de Funcionalidades</h2>
+      <div class="toc-grid">
+        <div class="toc-item"><strong>1. Estrutura Geral e Modo Off-line</strong><br/>• Cabeçalho Superior Fixo (`On/Off`, `Rascunhos`, `+ Cadastro`)<br/>• Barra Inferior de Navegação (5 Abas Principais)</div>
+        <div class="toc-item"><strong>2. Mapa Rápido de Caminhos (Onde Encontrar)</strong><br/>• Tabela de consulta rápida por objetivo operacional</div>
+        <div class="toc-item"><strong>3. Aba 1: 🎙️ Voz, Lembretes e Clima</strong><br/>• Lembretes da Semana (`Pendentes` / `Respondidos`)<br/>• Gravador de Voz com Inteligência Artificial<br/>• Rascunhos de Voz e Clima Agrícola</div>
+        <div class="toc-item"><strong>4. Aba 2: 👥 Gestão de Contatos (CRM)</strong><br/>• Filtros Rápidos (`Clientes`, `Possibilidades`, `Fornecedores`...)<br/>• Consulta em Sanfona, Edição e Exclusão</div>
+        <div class="toc-item"><strong>5. Aba 3: 🚚 Terceiros &amp; Freteiros</strong><br/>• Frota de Caminhoneiros e Capacidade em Toneladas<br/>• Simulador de Viagens e Cotação de Frete via WhatsApp</div>
+        <div class="toc-item"><strong>6. Aba 4: 🛒 Pedidos e Controle de Estoque</strong><br/>• Sub-aba `🛒 Pedidos`: Venda com Baixa Automática<br/>• Sub-aba `📦 Estoque`: Saldo de Silagem e Alertas</div>
+        <div class="toc-item"><strong>7. Aba 5: 💲 Gestão Financeira</strong><br/>• Sub-aba `📅 Por Período`: KPIs, Volume e Ticket Médio<br/>• Sub-aba `👥 Por Cliente`: Ranking de Compradores<br/>• Sub-aba `📜 Lançamentos`: Baixa `PAGO` / `PENDENTE`</div>
+        <div class="toc-item"><strong>8. Comunicação: 💬 Disparo de WhatsApp</strong><br/>• Mensagens automáticas para Recompra, Prospecção, Cotação de Frete e Atendimento Geral</div>
+      </div>
+    </div>
+
+    <!-- SEÇÃO 1: ESTRUTURA GERAL -->
+    <div class="section">
+      <div class="section-header">
+        <h2>1. Visão Geral da Tela e Funcionamento Off-line</h2>
+        <div class="path-subtitle">Acesso Global em qualquer tela do aplicativo</div>
+      </div>
+      <p>O <strong>Caboclo Agro CRM</strong> possui duas barras fixas que acompanham o usuário em qualquer módulo:</p>
+      <div class="grid-2">
+        <div class="card-box">
+          <h4>📌 Cabeçalho Superior Fixo (Topo da Tela)</h4>
+          <ul>
+            <li><strong>Selo <code>On</code> (Verde) / <code>Off</code> (Amarelo):</strong> Mostra se o aparelho está com internet ou operando em modo off-line no campo.</li>
+            <li><strong>Botão <code>Rascunhos</code>:</strong> Abre os áudios salvos quando você gravou sem internet.</li>
+            <li><strong>Botão <code>+ Cadastro</code>:</strong> Abre o formulário para cadastrar manualmente Clientes, Freteiros, Fornecedores ou Funcionários.</li>
+          </ul>
+        </div>
+        <div class="card-box">
+          <h4>🧭 Menu Principal Inferior (Rodapé da Tela)</h4>
+          <ul>
+            <li><strong>🎙️ Voz:</strong> Lembretes da semana, gravação por voz com IA e previsão do tempo.</li>
+            <li><strong>👥 Contatos:</strong> Carteira completa de clientes, possibilidades, fornecedores e equipe.</li>
+            <li><strong>🚚 Terceiros:</strong> Caminhoneiros parceiros e cotação de frete.</li>
+            <li><strong>🛒 Pedidos:</strong> Vendas de silagem e controle de estoque (`📦 Estoque`).</li>
+            <li><strong>💲 Financeiro:</strong> Faturamento por período, ranking de clientes e baixas.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="tip-box">
+        <strong>💡 Como funciona sem internet (Modo Off-line):</strong> Na roça ou na estrada sem sinal, um aviso amarelo aparece no topo. Você pode cadastrar clientes, lançar pedidos, dar baixa no estoque e gravar voz normalmente. Tudo fica salvo no aparelho e sincroniza sozinho quando a internet voltar.
+      </div>
+    </div>
+
+    <!-- SEÇÃO 2: MAPA DE CAMINHOS -->
+    <div class="section">
+      <div class="section-header">
+        <h2>2. Mapa Rápido de Caminhos (Onde Encontrar Cada Função)</h2>
+        <div class="path-subtitle">Guia de referência rápida para localização de tarefas no sistema</div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 42%;">O que você deseja fazer?</th>
+            <th style="width: 58%;">Caminho Exato no Sistema</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Cadastrar cliente ou venda falando por voz</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 🎙️ Voz &gt; Gravar Voz &gt; Parar &gt; Salvar Cadastro</span></td>
+          </tr>
+          <tr>
+            <td><strong>Recuperar áudio gravado quando estava sem internet</strong></td>
+            <td><span class="path-pill">Cabeçalho Superior &gt; Rascunhos &gt; Processar com IA / Cadastrar</span></td>
+          </tr>
+          <tr>
+            <td><strong>Cadastrar contato manualmente (sem usar voz)</strong></td>
+            <td><span class="path-pill">Cabeçalho Superior &gt; Botão "+ Cadastro"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Ver clientes cuja silagem está acabando nesta semana</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 🎙️ Voz &gt; Lembretes da Semana &gt; Aba "Pendentes"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Adiar um alerta de recompra por 3, 7, 15 ou 30 dias</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 🎙️ Voz &gt; Lembretes da Semana &gt; Botão "Adiar"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Consultar previsão do tempo e condição p/ silagem</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 🎙️ Voz &gt; Card "Montanha - ES • Clima Agro"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Filtrar apenas Clientes ou Orçamentos (Possibilidades)</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 👥 Contatos &gt; Botões "👥 Clientes" ou "❓ Possibilidades"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Editar ou Excluir um Contato cadastrado</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 👥 Contatos &gt; Card do Contato &gt; Botão "Editar"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Cadastrar um novo Caminhoneiro / Freteiro</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 🚚 Terceiros &gt; Botão "+ Adicionar"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Cotar disponibilidade de frete por WhatsApp</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 🚚 Terceiros &gt; Card do Motorista &gt; "Cotar Frete"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Lançar nova venda de silagem com baixa no estoque</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 🛒 Pedidos &gt; Sub-aba "🛒 Pedidos" &gt; "+ Novo Pedido"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Acionar motorista para entregar um pedido específico</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 🛒 Pedidos &gt; Card do Pedido &gt; Botão "Chamar"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Cadastrar novo lote de silagem no Estoque</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 🛒 Pedidos &gt; Sub-aba "📦 Estoque" &gt; "+ Entrada Estoque"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Ver Faturamento, Volume Vendido e Ticket Médio</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 💲 Financeiro &gt; Sub-aba "📅 Por Período"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Ver Ranking dos maiores compradores da fazenda</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 💲 Financeiro &gt; Sub-aba "👥 Por Cliente"</span></td>
+          </tr>
+          <tr>
+            <td><strong>Dar baixa em pagamento (Alternar PAGO / PENDENTE)</strong></td>
+            <td><span class="path-pill">Menu Inferior &gt; 💲 Financeiro &gt; Sub-aba "📜 Lançamentos" &gt; Clicar no selo</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="page-break"></div>
+
+    <!-- SEÇÃO 3: MÓDULO VOZ -->
+    <div class="section">
+      <div class="section-header">
+        <h2>3. Módulo 1: Voz, Lembretes da Semana e Clima Agrícola</h2>
+        <div class="path-subtitle">Caminho Principal: Menu Inferior &gt; 🎙️ Voz</div>
+      </div>
+
+      <h3>3.1. Painel "Lembretes da Semana" (Alertas de Recompra e Prospecção)</h3>
+      <p>Caminho: <span class="path-pill">Menu Inferior &gt; 🎙️ Voz &gt; Lembretes da Semana</span></p>
+      <ul>
+        <li><strong>Aba <code>Pendentes</code>:</strong> Mostra automaticamente os clientes com <strong>Estoque Fim</strong> (a previsão de duração da silagem comprada vence nos próximos 7 dias) e os contatos marcados como <strong>Prospect</strong> (orçamentos em aberto).</li>
+        <li><strong>Botão <code>Whats</code> (Verde):</strong> Abre o WhatsApp já com mensagem pronta de reposição de estoque ou acompanhamento de orçamento, e transfere o alerta automaticamente para a aba <strong><code>Respondidos</code></strong>.</li>
+        <li><strong>Botão <code>Adiar</code> (Relógio):</strong> Permite empurrar o lembrete para frente em <strong>+ 3 Dias</strong>, <strong>+ 7 Dias</strong>, <strong>+ 15 Dias</strong> ou <strong>+ 30 Dias</strong>.</li>
+        <li><strong>Aba <code>Respondidos</code>:</strong> Registra a data e hora em que você entrou em contato com o cliente e possui o botão <strong><code>Restaurar</code></strong> caso precise voltar o alerta para pendente.</li>
+      </ul>
+
+      <h3>3.2. Gravador de Voz Inteligente com IA</h3>
+      <p>Caminho: <span class="path-pill">Menu Inferior &gt; 🎙️ Voz &gt; Botão "Gravar Voz"</span></p>
+      <ol>
+        <li>Toque em <strong><code>Gravar Voz</code></strong> e dite os dados normalmente (ex.: <em>"Cliente Fazenda Santa Fé, telefone 27 99888-1122, tem 90 cabeças de gado em Montanha, pediu 12 toneladas de silagem de milho"</em>).</li>
+        <li>Toque em <strong><code>Parar</code></strong>. A Inteligência Artificial preencherá sozinha o cartão <strong>Conferir Dados Extraídos</strong> (Tipo, Classificação, Nome, Telefone, Endereço, Nº de Animais e Produto/Pedido).</li>
+        <li>Revise os campos na tela e toque em <strong><code>Salvar Cadastro</code></strong>.</li>
+      </ol>
+
+      <h3>3.3. Clima &amp; Tempo Agrícola</h3>
+      <p>Caminho: <span class="path-pill">Menu Inferior &gt; 🎙️ Voz &gt; Card "Montanha - ES • Clima Agro"</span></p>
+      <p>Exibe temperatura atual, umidade, probabilidade de chuva, vento e previsão para 4 dias, além do indicador automático <strong><code>☀️ Bom p/ Silagem</code></strong> ou <strong><code>🌧️ Possibilidade de Chuva</code></strong>.</p>
+    </div>
+
+    <!-- SEÇÃO 4: MÓDULO CONTATOS -->
+    <div class="section">
+      <div class="section-header">
+        <h2>4. Módulo 2: Gestão de Contatos (CRM Completo)</h2>
+        <div class="path-subtitle">Caminho Principal: Menu Inferior &gt; 👥 Contatos</div>
+      </div>
+      <ul>
+        <li><strong>Barra de Filtros Rápidos:</strong> Alterne no topo entre <code>Todos</code>, <code>👥 Clientes</code>, <code>❓ Possibilidades</code>, <code>🚚 Terceiros</code>, <code>🏢 Fornecedores</code> e <code>👨‍🌾 Funcionários</code>.</li>
+        <li><strong>Ver Detalhes (Sanfona):</strong> Toque sobre o cartão do contato para expandir e visualizar <strong>Endereço da Fazenda</strong>, <strong>Quantidade de Animais</strong> e <strong>Observações</strong>.</li>
+        <li><strong>Ações Rápidas no Contato:</strong>
+          <ul>
+            <li><strong><code>Whats</code>:</strong> Abre mensagem personalizada para o contato.</li>
+            <li><strong><code>Editar</code>:</strong> Permite alterar os dados cadastrados ou <strong>Excluir o contato</strong> clicando no ícone vermelho de lixeira dentro da janela.</li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+
+    <!-- SEÇÃO 5: MÓDULO TERCEIROS -->
+    <div class="section">
+      <div class="section-header">
+        <h2>5. Módulo 3: Terceiros &amp; Freteiros (Logística)</h2>
+        <div class="path-subtitle">Caminho Principal: Menu Inferior &gt; 🚚 Terceiros</div>
+      </div>
+      <ul>
+        <li><strong>Consulta de Frota:</strong> Lista todos os motoristas parceiros destacando a <strong>Capacidade Máxima em Toneladas</strong> (ex.: <code>14 Ton</code>) e o <strong>Tipo de Caminhão</strong> (ex.: <code>Truck 3 Eixos</code>).</li>
+        <li><strong>Simulador Automático de Viagens:</strong> Ao tocar no cartão do motorista para expandir, o sistema calcula quantas viagens o caminhão dele leva para transportar uma carga de referência de 10t.</li>
+        <li><strong>Novo Freteiro:</strong> Toque em <span class="path-pill">Menu Inferior &gt; 🚚 Terceiros &gt; + Adicionar</span>.</li>
+        <li><strong>Cotação por WhatsApp:</strong> Toque em <strong><code>Cotar Frete</code></strong> para enviar uma mensagem pronta consultando disponibilidade do caminhão.</li>
+      </ul>
+    </div>
+
+    <!-- SEÇÃO 6: MÓDULO PEDIDOS E ESTOQUE -->
+    <div class="section">
+      <div class="section-header">
+        <h2>6. Módulo 4: Pedidos de Venda e Controle de Estoque</h2>
+        <div class="path-subtitle">Caminho Principal: Menu Inferior &gt; 🛒 Pedidos (Sub-abas "🛒 Pedidos" e "📦 Estoque")</div>
+      </div>
+
+      <h3>6.1. Sub-aba <code>🛒 Pedidos</code> (Vendas e Alocação de Caminhão)</h3>
+      <p>Caminho: <span class="path-pill">Menu Inferior &gt; 🛒 Pedidos &gt; Sub-aba "🛒 Pedidos"</span></p>
+      <ul>
+        <li><strong>Criar Novo Pedido (<code>+ Novo Pedido</code>):</strong>
+          <ol>
+            <li>Escolha o <strong>Cliente Cadastrado</strong>.</li>
+            <li>Selecione os <strong>Itens do Estoque</strong> e informe a quantidade (use <code>+ Adicionar Outro Item</code> se houver mais de um produto). O total em <code>R$</code> é calculado na hora.</li>
+            <li>Selecione o <strong>Freteiro / Transportador</strong> (opcional) e a <strong>Previsão de Duração na Fazenda</strong> (<code>15</code>, <code>30</code>, <code>45</code> ou <code>60 dias</code>).</li>
+            <li>Ao tocar em <strong><code>Concluir Pedido</code></strong>, o sistema registra a venda, agenda o lembrete de recompra e <strong>desconta automaticamente a quantidade do Estoque</strong>.</li>
+          </ol>
+        </li>
+        <li><strong>Acionar Caminhoneiro no Pedido:</strong> Em cada pedido salvo, o quadro <em>"🚚 Terceiros Disponíveis p/ Carga"</em> mostra quantas viagens cada motorista precisará para levar aquele pedido específico. Clique em <strong><code>Chamar</code></strong> para enviar os dados da entrega no WhatsApp do motorista.</li>
+      </ul>
+
+      <h3>6.2. Sub-aba <code>📦 Estoque</code> (Silos, Sacaria e Alertas de Saldo)</h3>
+      <p>Caminho: <span class="path-pill">Menu Inferior &gt; 🛒 Pedidos &gt; Sub-aba "📦 Estoque"</span></p>
+      <ul>
+        <li>Exibe no topo o <strong>Total de Produtos</strong> e o <strong>Valor Total Estoque (<code>R$</code>)</strong>.</li>
+        <li>Sinaliza cada item automaticamente com os selos: <strong><code>✅ Disponível</code></strong> (Verde), <strong><code>⚠️ Estoque Baixo</code></strong> (Amarelo — quando atinge o alerta mínimo) ou <strong><code>❌ Esgotado</code></strong> (Vermelho).</li>
+        <li>Para adicionar nova produção ou lote, clique em <strong><code>+ Entrada Estoque</code></strong>.</li>
+      </ul>
+    </div>
+
+    <!-- SEÇÃO 7: MÓDULO FINANCEIRO -->
+    <div class="section">
+      <div class="section-header">
+        <h2>7. Módulo 5: Gestão Financeira e Faturamento</h2>
+        <div class="path-subtitle">Caminho Principal: Menu Inferior &gt; 💲 Financeiro</div>
+      </div>
+      <div class="grid-2">
+        <div class="card-box">
+          <h4>📅 Sub-aba 1: Por Período</h4>
+          <p>Caminho: <span class="path-pill">💲 Financeiro &gt; 📅 Por Período</span></p>
+          <p>Filtre por <strong>Este Mês</strong>, <strong>Últimos 30 Dias</strong>, <strong>Este Ano</strong> ou <strong>Todos</strong> para ver:</p>
+          <ul>
+            <li><strong>Faturamento Total (R$)</strong> e <strong>Ticket Médio (R$)</strong></li>
+            <li><strong>Volume Vendido (toneladas)</strong> e <strong>Total de Pedidos</strong></li>
+          </ul>
+        </div>
+        <div class="card-box">
+          <h4>👥 Sub-aba 2: Por Cliente (Ranking)</h4>
+          <p>Caminho: <span class="path-pill">💲 Financeiro &gt; 👥 Por Cliente</span></p>
+          <p>Mostra o ranking <code>#1, #2, #3...</code> dos maiores clientes compradores da fazenda, com barra visual de participação (<code>% das vendas</code>), volume em toneladas e data da última compra.</p>
+        </div>
+      </div>
+      <div class="card-box" style="margin-top: 10px;">
+        <h4>📜 Sub-aba 3: Lançamentos e Baixa Rápida de Pagamentos</h4>
+        <p>Caminho: <span class="path-pill">Menu Inferior &gt; 💲 Financeiro &gt; Sub-aba "📜 Lançamentos"</span></p>
+        <p>Exibe o resumo de <strong>Total Vendas (R$)</strong> vs. <strong>Compras / Fornecedor (R$)</strong>. Para mudar um lançamento de <strong><code>⏳ PENDENTE</code></strong> para <strong><code>✅ PAGO</code></strong> (ou vice-versa), basta <strong>tocar diretamente em cima do selo colorido de status</strong> na lista.</p>
+      </div>
+    </div>
+
+    <div class="footer-note">
+      Caboclo Agro CRM • Manual de Operação e Índice de Caminhos do Sistema
+    </div>
+  </div>
+
+</body>
+</html>
