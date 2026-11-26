@@ -12,9 +12,9 @@ const atendimentoExtendidoSchema = z.object({
       'Tipo de pessoa ou empresa mencionada no áudio. Identifique se é cliente, funcionário da fazenda, fornecedor de insumos ou terceiro/transportador. Padrão: cliente.'
     ),
   status_crm: z
-    .enum(['possibilidade', 'cliente_ativo', 'parceiro'])
+    .enum(['possibilidade', 'cliente_ativo'])
     .describe(
-      'Classificação do contato: "possibilidade" se é um prospecto/orçamento sem compra fechada, "cliente_ativo" se já comprou ou fechou pedido, ou "parceiro".'
+      'Classificação do contato: "possibilidade" se é um novo cliente/prospecto/orçamento sem compra fechada, ou "cliente_ativo" se já é cliente / já comprou.'
     ),
   nome_cliente: z
     .string()
@@ -107,7 +107,7 @@ Analise a transcrição de voz fornecida pelo vendedor/atendente:
 
 Extraia com máxima precisão os dados estruturados:
 1. tipo_entidade: 'cliente', 'funcionario', 'terceiro' ou 'fornecedor'.
-2. status_crm: 'possibilidade', 'cliente_ativo' ou 'parceiro'.
+2. status_crm: 'possibilidade' ou 'cliente_ativo'.
 3. nome_cliente: Nome do contato, motorista/terceiro ou fazenda.
 4. telefone: Telefone se citado.
 5. endereco_fazenda: Localização ou endereço da fazenda.

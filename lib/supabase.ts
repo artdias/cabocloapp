@@ -40,14 +40,23 @@ export interface Contato {
   status_crm: StatusCRM;
   nome: string;
   telefone?: string | null;
+  telefone_secundario?: string | null;
   cidade?: string | null;
   fazenda?: string | null;
   endereco_fazenda?: string | null;
+  area_fazenda?: string | null;
   latitude?: number | null;
   longitude?: number | null;
   quantidade_animais?: number | string | null;
   capacidade_carga_toneladas?: number | null; // Para Terceiros/Transportadores
   tipo_veiculo?: string | null; // Ex: Toco, Truck, Carreta
+  salario_valor?: number | null; // Para Funcionários
+  salario_tipo?: 'diaria' | 'semanal' | 'quinzenal' | 'mensal' | null;
+  vinculo_funcionario?: 'fixo' | 'temporario' | null;
+  local_trabalho?: string | null;
+  razao_social?: string | null; // Para Fornecedores
+  cnpj?: string | null;
+  produtos_oferecidos?: string | null;
   observacao?: string | null;
   created_at?: string;
 }
@@ -185,11 +194,20 @@ export async function salvarContatoNoBanco(contato: Contato): Promise<boolean> {
     deleted: false,
     updated_at: new Date().toISOString(),
     endereco_fazenda: contato.endereco_fazenda || null,
+    area_fazenda: contato.area_fazenda || null,
+    telefone_secundario: contato.telefone_secundario || null,
     latitude: contato.latitude ?? null,
     longitude: contato.longitude ?? null,
     quantidade_animais: contato.quantidade_animais || null,
     capacidade_carga_toneladas: contato.capacidade_carga_toneladas ?? null,
     tipo_veiculo: contato.tipo_veiculo || null,
+    salario_valor: contato.salario_valor ?? null,
+    salario_tipo: contato.salario_tipo || null,
+    vinculo_funcionario: contato.vinculo_funcionario || null,
+    local_trabalho: contato.local_trabalho || null,
+    razao_social: contato.razao_social || null,
+    cnpj: contato.cnpj || null,
+    produtos_oferecidos: contato.produtos_oferecidos || null,
   });
 
   const payload = {
@@ -291,9 +309,11 @@ export function parseContatosDoBanco(rows: any[]): Contato[] {
       status_crm: row.status_crm || 'cliente_ativo',
       nome: nomeStr,
       telefone: row.telefone ?? null,
+      telefone_secundario: row.telefone_secundario ?? extra.telefone_secundario ?? null,
       cidade: row.cidade ?? extra.cidade ?? null,
       fazenda: null,
       endereco_fazenda: row.endereco_fazenda ?? extra.endereco_fazenda ?? null,
+      area_fazenda: row.area_fazenda ?? extra.area_fazenda ?? null,
       latitude:
         row.latitude != null
           ? Number(row.latitude)
@@ -310,6 +330,18 @@ export function parseContatosDoBanco(rows: any[]): Contato[] {
       capacidade_carga_toneladas:
         row.capacidade_carga_toneladas ?? extra.capacidade_carga_toneladas ?? null,
       tipo_veiculo: row.tipo_veiculo ?? extra.tipo_veiculo ?? null,
+      salario_valor:
+        row.salario_valor != null
+          ? Number(row.salario_valor)
+          : extra.salario_valor != null
+          ? Number(extra.salario_valor)
+          : null,
+      salario_tipo: row.salario_tipo ?? extra.salario_tipo ?? null,
+      vinculo_funcionario: row.vinculo_funcionario ?? extra.vinculo_funcionario ?? null,
+      local_trabalho: row.local_trabalho ?? extra.local_trabalho ?? null,
+      razao_social: row.razao_social ?? extra.razao_social ?? null,
+      cnpj: row.cnpj ?? extra.cnpj ?? null,
+      produtos_oferecidos: row.produtos_oferecidos ?? extra.produtos_oferecidos ?? null,
       observacao: row.observacao ?? null,
       created_at: anterior?.created_at || row.created_at || new Date().toISOString(),
     });

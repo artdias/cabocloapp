@@ -361,6 +361,11 @@ export default function CabocloAgroCRM() {
   const [subAbaPedidos, setSubAbaPedidos] = useState<'pedidos' | 'estoque'>('pedidos');
   const [isNovoPedidoModalOpen, setIsNovoPedidoModalOpen] = useState<boolean>(false);
   const [isNovoItemEstoqueModalOpen, setIsNovoItemEstoqueModalOpen] = useState<boolean>(false);
+  const [entradaEstoqueModal, setEntradaEstoqueModal] = useState<{
+    item: ItemEstoque;
+    quantidadeAdicionar: string;
+    novoPreco: string;
+  } | null>(null);
 
   // Form State para Novo Pedido com Seleção de Cliente e Itens
   const [novoPedidoForm, setNovoPedidoForm] = useState<{
@@ -424,12 +429,21 @@ export default function CabocloAgroCRM() {
     status_crm: StatusCRM;
     nome: string;
     telefone: string;
+    telefone_secundario: string;
     endereco_fazenda: string;
+    area_fazenda: string;
     latitude: number | null;
     longitude: number | null;
     quantidade_animais: string;
     capacidade_carga_toneladas: string;
     tipo_veiculo: string;
+    salario_valor: string;
+    salario_tipo: 'diaria' | 'semanal' | 'quinzenal' | 'mensal';
+    vinculo_funcionario: 'fixo' | 'temporario';
+    local_trabalho: string;
+    razao_social: string;
+    cnpj: string;
+    produtos_oferecidos: string;
     produto: string;
     quantidade: string;
     valor_total: string;
@@ -826,12 +840,21 @@ export default function CabocloAgroCRM() {
       status_crm: 'cliente_ativo',
       nome: '',
       telefone: '',
+      telefone_secundario: '',
       endereco_fazenda: '',
+      area_fazenda: '',
       latitude: null,
       longitude: null,
       quantidade_animais: '',
       capacidade_carga_toneladas: '',
       tipo_veiculo: '',
+      salario_valor: '',
+      salario_tipo: 'mensal',
+      vinculo_funcionario: 'fixo',
+      local_trabalho: '',
+      razao_social: '',
+      cnpj: '',
+      produtos_oferecidos: '',
       produto: 'Silagem de Milho',
       quantidade: '',
       valor_total: '',
@@ -853,15 +876,24 @@ export default function CabocloAgroCRM() {
     setAvisoValidacaoCadastro(null);
     setFormData({
       tipo: tipoInicial,
-      status_crm: tipoInicial === 'terceiro' ? 'parceiro' : 'cliente_ativo',
+      status_crm: 'cliente_ativo',
       nome: '',
       telefone: '',
+      telefone_secundario: '',
       endereco_fazenda: '',
+      area_fazenda: '',
       latitude: null,
       longitude: null,
       quantidade_animais: '',
       capacidade_carga_toneladas: '',
       tipo_veiculo: '',
+      salario_valor: '',
+      salario_tipo: 'mensal',
+      vinculo_funcionario: 'fixo',
+      local_trabalho: '',
+      razao_social: '',
+      cnpj: '',
+      produtos_oferecidos: '',
       produto: tipoInicial === 'terceiro' ? '' : 'Silagem de Milho',
       quantidade: '',
       valor_total: '',
@@ -882,15 +914,24 @@ export default function CabocloAgroCRM() {
     setAvisoValidacaoCadastro(null);
     setFormData({
       tipo: contato.tipo,
-      status_crm: contato.status_crm,
+      status_crm: contato.status_crm === 'parceiro' ? 'cliente_ativo' : contato.status_crm,
       nome: contato.nome,
       telefone: contato.telefone || '',
+      telefone_secundario: contato.telefone_secundario || '',
       endereco_fazenda: contato.endereco_fazenda || '',
+      area_fazenda: contato.area_fazenda || '',
       latitude: contato.latitude ?? null,
       longitude: contato.longitude ?? null,
       quantidade_animais: contato.quantidade_animais ? String(contato.quantidade_animais) : '',
       capacidade_carga_toneladas: contato.capacidade_carga_toneladas ? String(contato.capacidade_carga_toneladas) : '',
       tipo_veiculo: contato.tipo_veiculo || '',
+      salario_valor: contato.salario_valor != null ? String(contato.salario_valor) : '',
+      salario_tipo: contato.salario_tipo || 'mensal',
+      vinculo_funcionario: contato.vinculo_funcionario || 'fixo',
+      local_trabalho: contato.local_trabalho || '',
+      razao_social: contato.razao_social || '',
+      cnpj: contato.cnpj || '',
+      produtos_oferecidos: contato.produtos_oferecidos || '',
       produto: pedidoRelacionado?.produto || 'Silagem de Milho',
       quantidade: pedidoRelacionado?.quantidade || '',
       valor_total: pedidoRelacionado?.valor_total ? String(pedidoRelacionado.valor_total) : '',
@@ -997,12 +1038,21 @@ export default function CabocloAgroCRM() {
         status_crm: res.status_crm || 'possibilidade',
         nome: res.nome_cliente || '',
         telefone: res.telefone || '',
+        telefone_secundario: '',
         endereco_fazenda: res.endereco_fazenda || '',
+        area_fazenda: '',
         latitude: coordsIniciais ? coordsIniciais.lat : null,
         longitude: coordsIniciais ? coordsIniciais.lng : null,
         quantidade_animais: res.quantidade_animais || '',
         capacidade_carga_toneladas: res.capacidade_carga_toneladas ? String(res.capacidade_carga_toneladas) : '',
         tipo_veiculo: res.tipo_veiculo || '',
+        salario_valor: '',
+        salario_tipo: 'mensal',
+        vinculo_funcionario: 'fixo',
+        local_trabalho: '',
+        razao_social: '',
+        cnpj: '',
+        produtos_oferecidos: '',
         produto: res.produto || '',
         quantidade: res.quantidade || '',
         valor_total: res.valor_total ? String(res.valor_total) : '',
@@ -1124,12 +1174,24 @@ export default function CabocloAgroCRM() {
               status_crm: formData.status_crm,
               nome: nomeLimpo,
               telefone: formData.telefone.trim() || null,
+              telefone_secundario: formData.telefone_secundario.trim() || null,
               endereco_fazenda: formData.endereco_fazenda.trim() || null,
+              area_fazenda: formData.area_fazenda.trim() || null,
               latitude: latFinal ?? c.latitude ?? null,
               longitude: lngFinal ?? c.longitude ?? null,
               quantidade_animais: formData.quantidade_animais.trim() || null,
               capacidade_carga_toneladas: capNum,
               tipo_veiculo: formData.tipo_veiculo.trim() || null,
+              salario_valor:
+                formData.tipo === 'funcionario' && formData.salario_valor.trim()
+                  ? parseFloat(formData.salario_valor.replace(',', '.')) || null
+                  : null,
+              salario_tipo: formData.tipo === 'funcionario' ? formData.salario_tipo : null,
+              vinculo_funcionario: formData.tipo === 'funcionario' ? formData.vinculo_funcionario : null,
+              local_trabalho: formData.tipo === 'funcionario' ? formData.local_trabalho.trim() || null : null,
+              razao_social: formData.tipo === 'fornecedor' ? formData.razao_social.trim() || null : null,
+              cnpj: formData.tipo === 'fornecedor' ? formData.cnpj.trim() || null : null,
+              produtos_oferecidos: formData.tipo === 'fornecedor' ? formData.produtos_oferecidos.trim() || null : null,
               observacao: formData.observacao.trim() || null,
             };
             return contatoEditadoObj;
@@ -1178,12 +1240,24 @@ export default function CabocloAgroCRM() {
           status_crm: formData.status_crm,
           nome: nomeLimpo,
           telefone: formData.telefone.trim() || null,
+          telefone_secundario: formData.telefone_secundario.trim() || null,
           endereco_fazenda: formData.endereco_fazenda.trim() || null,
+          area_fazenda: formData.area_fazenda.trim() || null,
           latitude: latFinal ?? existenteMesmoNome?.latitude ?? null,
           longitude: lngFinal ?? existenteMesmoNome?.longitude ?? null,
           quantidade_animais: formData.quantidade_animais.trim() || null,
           capacidade_carga_toneladas: capNum,
           tipo_veiculo: formData.tipo_veiculo.trim() || null,
+          salario_valor:
+            formData.tipo === 'funcionario' && formData.salario_valor.trim()
+              ? parseFloat(formData.salario_valor.replace(',', '.')) || null
+              : null,
+          salario_tipo: formData.tipo === 'funcionario' ? formData.salario_tipo : null,
+          vinculo_funcionario: formData.tipo === 'funcionario' ? formData.vinculo_funcionario : null,
+          local_trabalho: formData.tipo === 'funcionario' ? formData.local_trabalho.trim() || null : null,
+          razao_social: formData.tipo === 'fornecedor' ? formData.razao_social.trim() || null : null,
+          cnpj: formData.tipo === 'fornecedor' ? formData.cnpj.trim() || null : null,
+          produtos_oferecidos: formData.tipo === 'fornecedor' ? formData.produtos_oferecidos.trim() || null : null,
           observacao: formData.observacao.trim() || null,
           created_at: existenteMesmoNome?.created_at || new Date().toISOString(),
         };
@@ -1629,6 +1703,52 @@ export default function CabocloAgroCRM() {
       }
     } finally {
       salvandoRef.current = false;
+    }
+  };
+
+  // Adicionar Entrada de Quantidade em Produto Existente do Estoque
+  const confirmarEntradaEstoque = async () => {
+    if (!entradaEstoqueModal || salvandoRef.current) return;
+
+    const qtdAdd = parseFloat(entradaEstoqueModal.quantidadeAdicionar.replace(',', '.'));
+    if (isNaN(qtdAdd) || qtdAdd <= 0) {
+      setErrorMessage('Informe uma quantidade válida maior que zero para dar entrada no estoque.');
+      return;
+    }
+
+    const precoParsed = parseFloat(entradaEstoqueModal.novoPreco.replace(',', '.'));
+    const precoFinal =
+      !isNaN(precoParsed) && precoParsed >= 0 ? precoParsed : entradaEstoqueModal.item.preco_unitario;
+
+    salvandoRef.current = true;
+    setIsSaving(true);
+    try {
+      const novaLista = estoque.map((it) =>
+        it.id === entradaEstoqueModal.item.id
+          ? {
+              ...it,
+              quantidade_disponivel: Math.round((it.quantidade_disponivel + qtdAdd) * 100) / 100,
+              preco_unitario: precoFinal,
+            }
+          : it
+      );
+
+      setEstoque(novaLista);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_estoque', JSON.stringify(novaLista));
+      }
+
+      setEntradaEstoqueModal(null);
+      setStatus(`✅ +${qtdAdd} ${entradaEstoqueModal.item.unidade_medida} adicionado ao estoque!`);
+
+      const ok = await salvarEstoqueNoBanco(novaLista);
+      if (!ok) {
+        setErrorMessage('⚠️ Entrada salva apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+      }
+      setTimeout(() => setStatus('Pronto para gravar'), 2000);
+    } finally {
+      salvandoRef.current = false;
+      setIsSaving(false);
     }
   };
 
@@ -2215,7 +2335,7 @@ export default function CabocloAgroCRM() {
               title="Ver rascunhos salvos"
             >
               <Inbox className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden xs:inline sm:inline">Rascunhos</span>
+              <span className="hidden sm:inline">Rascunhos</span>
               {rascunhos.length > 0 && (
                 <span className="bg-amber-400 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ml-0.5">
                   {rascunhos.length}
@@ -3141,9 +3261,8 @@ export default function CabocloAgroCRM() {
                       onChange={(e) => setFormData({ ...formData, status_crm: e.target.value as StatusCRM })}
                       className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
                     >
-                      <option value="possibilidade">❓ Possibilidade</option>
-                      <option value="cliente_ativo">✅ Ativo</option>
-                      <option value="parceiro">⭐ Parceiro</option>
+                      <option value="possibilidade">❓ Possibilidade (Novo Cliente)</option>
+                      <option value="cliente_ativo">✅ Ativo (Já Cliente)</option>
                     </select>
                   </div>
 
@@ -3398,7 +3517,15 @@ export default function CabocloAgroCRM() {
                 const isExpanded = !!contatosExpandidos[cId];
                 const temDetalhes = !!(
                   contato.endereco_fazenda ||
+                  contato.area_fazenda ||
+                  contato.telefone_secundario ||
                   contato.quantidade_animais ||
+                  contato.salario_valor != null ||
+                  contato.local_trabalho ||
+                  contato.vinculo_funcionario ||
+                  contato.razao_social ||
+                  contato.cnpj ||
+                  contato.produtos_oferecidos ||
                   contato.observacao ||
                   contato.capacidade_carga_toneladas ||
                   contato.tipo_veiculo
@@ -3539,6 +3666,77 @@ export default function CabocloAgroCRM() {
                                 <span>{contato.quantidade_animais}</span>
                               </div>
                             )}
+                            {contato.area_fazenda && (
+                              <div className="flex items-center gap-1.5 text-slate-300">
+                                <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span>Área: {contato.area_fazenda}</span>
+                              </div>
+                            )}
+                            {contato.telefone_secundario && (
+                              <div className="flex items-center gap-1.5 text-slate-300 font-mono">
+                                <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <span>2º Tel: {contato.telefone_secundario}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {contato.tipo === 'fornecedor' && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] bg-slate-950/60 p-2.5 rounded-xl text-slate-300 border border-slate-850">
+                            {contato.razao_social && (
+                              <div className="sm:col-span-2 text-slate-200 font-semibold">
+                                🏢 Razão Social: {contato.razao_social}
+                              </div>
+                            )}
+                            {contato.cnpj && (
+                              <div className="font-mono text-amber-300">
+                                📄 CNPJ: {contato.cnpj}
+                              </div>
+                            )}
+                            {contato.endereco_fazenda && (
+                              <div className="sm:col-span-2 flex items-center gap-1.5 text-slate-300">
+                                <MapPin className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span>Endereço: {contato.endereco_fazenda}</span>
+                              </div>
+                            )}
+                            {contato.produtos_oferecidos && (
+                              <div className="sm:col-span-2 text-emerald-300">
+                                📦 Produtos: {contato.produtos_oferecidos}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {contato.tipo === 'funcionario' && (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] bg-slate-950/60 p-2.5 rounded-xl text-slate-300 border border-slate-850">
+                            {contato.salario_valor != null && (
+                              <div className="flex items-center gap-1.5 text-emerald-300 font-semibold">
+                                <span>
+                                  💵 Salário: R$ {contato.salario_valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (
+                                  {contato.salario_tipo === 'diaria'
+                                    ? 'Diária'
+                                    : contato.salario_tipo === 'semanal'
+                                    ? 'Semanal'
+                                    : contato.salario_tipo === 'quinzenal'
+                                    ? 'Quinzenal'
+                                    : 'Mensal'}
+                                  )
+                                </span>
+                              </div>
+                            )}
+                            {contato.vinculo_funcionario && (
+                              <div className="flex items-center gap-1.5 text-sky-300 font-semibold">
+                                <span>
+                                  📋 Vínculo: {contato.vinculo_funcionario === 'fixo' ? 'Fixo' : 'Temporário'}
+                                </span>
+                              </div>
+                            )}
+                            {contato.local_trabalho && (
+                              <div className="sm:col-span-2 flex items-center gap-1.5 text-slate-300">
+                                <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                <span>Local: {contato.local_trabalho}</span>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -3627,10 +3825,10 @@ export default function CabocloAgroCRM() {
         {/* ABA ESTOQUE */}
         {activeTab === 'estoque' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between gap-2 px-1">
-              <div>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <div className="min-w-0">
                 <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                  <Package className="w-4 h-4 text-sky-400" /> Controle de Estoque ({estoque.length})
+                  <Package className="w-4 h-4 text-sky-400 shrink-0" /> Controle de Estoque ({estoque.length})
                 </h2>
                 <p className="text-[11px] text-slate-500">
                   Saldo de silagem disponível, preços e alertas de reposição
@@ -3653,7 +3851,7 @@ export default function CabocloAgroCRM() {
                 }}
                 className="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all shrink-0"
               >
-                <Plus className="w-3.5 h-3.5" /> Entrada Estoque
+                <Plus className="w-3.5 h-3.5" /> Novo Produto
               </button>
             </div>
 
@@ -3718,11 +3916,26 @@ export default function CabocloAgroCRM() {
                         </span>
                       </div>
 
-                      <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 flex items-center justify-between text-xs">
-                        <span className="text-slate-400">Quantidade Atual:</span>
-                        <span className="font-extrabold text-white text-sm font-mono">
-                          {item.quantidade_disponivel} {item.unidade_medida}
-                        </span>
+                      <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <div>
+                          <span className="text-slate-400 block text-[11px]">Quantidade Atual:</span>
+                          <span className="font-extrabold text-white text-sm font-mono">
+                            {item.quantidade_disponivel} {item.unidade_medida}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEntradaEstoqueModal({
+                              item,
+                              quantidadeAdicionar: '',
+                              novoPreco: String(item.preco_unitario),
+                            })
+                          }
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all active:scale-95 shrink-0"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Adicionar Entrada
+                        </button>
                       </div>
 
                       {item.observacao && (
@@ -4223,22 +4436,27 @@ export default function CabocloAgroCRM() {
                   </select>
                 </div>
 
-                <div>
-                  <label className="text-[11px] text-slate-400 font-semibold block mb-1">Classificação CRM</label>
-                  <select
-                    value={formData.status_crm}
-                    onChange={(e) => setFormData({ ...formData, status_crm: e.target.value as StatusCRM })}
-                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
-                  >
-                    <option value="possibilidade">❓ Possibilidade (Prospect)</option>
-                    <option value="cliente_ativo">✅ Ativo / Disponível</option>
-                    <option value="parceiro">⭐ Parceiro</option>
-                  </select>
-                </div>
+                {formData.tipo === 'cliente' && (
+                  <div>
+                    <label className="text-[11px] text-slate-400 font-semibold block mb-1">Classificação CRM</label>
+                    <select
+                      value={formData.status_crm}
+                      onChange={(e) => setFormData({ ...formData, status_crm: e.target.value as StatusCRM })}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                    >
+                      <option value="possibilidade">❓ Possibilidade (Novo Cliente)</option>
+                      <option value="cliente_ativo">✅ Ativo (Já Cliente)</option>
+                    </select>
+                  </div>
+                )}
 
                 <div className="sm:col-span-2">
                   <label className={`text-[11px] font-semibold block mb-1 ${errosCadastro.nome ? 'text-red-400' : 'text-slate-300'}`}>
-                    Nome / Fazenda / Motorista *
+                    {formData.tipo === 'funcionario'
+                      ? 'Nome do Funcionário *'
+                      : formData.tipo === 'fornecedor'
+                      ? 'Nome da Empresa / Fornecedor *'
+                      : 'Nome / Fazenda / Motorista *'}
                   </label>
                   <input
                     ref={manualNomeRef}
@@ -4396,38 +4614,138 @@ export default function CabocloAgroCRM() {
                   )}
                 </div>
 
-                {formData.tipo !== 'terceiro' && (
+                {formData.tipo === 'funcionario' && (
                   <>
                     <div>
-                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Valor Total (R$)</label>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Salário (R$)</label>
                       <input
                         type="number"
-                        value={formData.valor_total}
-                        onChange={(e) => setFormData({ ...formData, valor_total: e.target.value })}
-                        placeholder="Ex: 4500.00"
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                        step="0.01"
+                        value={formData.salario_valor}
+                        onChange={(e) => setFormData({ ...formData, salario_valor: e.target.value })}
+                        placeholder="Ex: 2500.00"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-emerald-500"
                       />
                     </div>
 
                     <div>
-                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Produto</label>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Forma de Pagamento</label>
+                      <select
+                        value={formData.salario_tipo}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            salario_tipo: e.target.value as 'diaria' | 'semanal' | 'quinzenal' | 'mensal',
+                          })
+                        }
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-emerald-500"
+                      >
+                        <option value="diaria">Diária</option>
+                        <option value="semanal">Semanal</option>
+                        <option value="quinzenal">Quinzenal</option>
+                        <option value="mensal">Mensal</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Tipo de Vínculo</label>
+                      <select
+                        value={formData.vinculo_funcionario}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            vinculo_funcionario: e.target.value as 'fixo' | 'temporario',
+                          })
+                        }
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-emerald-500"
+                      >
+                        <option value="fixo">Fixo</option>
+                        <option value="temporario">Temporário</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Local de Trabalho</label>
                       <input
                         type="text"
-                        value={formData.produto}
-                        onChange={(e) => setFormData({ ...formData, produto: e.target.value })}
-                        placeholder="Ex: Silagem de Milho"
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                        value={formData.local_trabalho}
+                        onChange={(e) => setFormData({ ...formData, local_trabalho: e.target.value })}
+                        placeholder="Ex: Pátio / Fazenda / Pivô 01"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {formData.tipo === 'fornecedor' && (
+                  <>
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Razão Social</label>
+                      <input
+                        type="text"
+                        value={formData.razao_social}
+                        onChange={(e) => setFormData({ ...formData, razao_social: e.target.value })}
+                        placeholder="Ex: Agropecuária Vale Verde Ltda"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-emerald-500"
                       />
                     </div>
 
                     <div>
-                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Quantidade</label>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">CNPJ</label>
                       <input
                         type="text"
-                        value={formData.quantidade}
-                        onChange={(e) => setFormData({ ...formData, quantidade: e.target.value })}
-                        placeholder="Ex: 10 toneladas"
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none"
+                        value={formData.cnpj}
+                        onChange={(e) => setFormData({ ...formData, cnpj: e.target.value })}
+                        placeholder="Ex: 12.345.678/0001-90"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Endereço da Empresa</label>
+                      <input
+                        type="text"
+                        value={formData.endereco_fazenda}
+                        onChange={(e) => setFormData({ ...formData, endereco_fazenda: e.target.value })}
+                        placeholder="Ex: Av. Principal, 500 - Centro, Linhares - ES"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Produtos que Oferece</label>
+                      <input
+                        type="text"
+                        value={formData.produtos_oferecidos}
+                        onChange={(e) => setFormData({ ...formData, produtos_oferecidos: e.target.value })}
+                        placeholder="Ex: Sementes de Milho, Adubo, Lona, Inoculante"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {formData.tipo === 'cliente' && (
+                  <>
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Área da Fazenda</label>
+                      <input
+                        type="text"
+                        value={formData.area_fazenda}
+                        onChange={(e) => setFormData({ ...formData, area_fazenda: e.target.value })}
+                        placeholder="Ex: 50 hectares"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-slate-400 font-semibold block mb-1">Segundo Telefone de Contato</label>
+                      <input
+                        type="tel"
+                        value={formData.telefone_secundario}
+                        onChange={(e) => setFormData({ ...formData, telefone_secundario: e.target.value })}
+                        placeholder="Ex: 27999887766"
+                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-slate-100 outline-none focus:border-emerald-500"
                       />
                     </div>
                   </>
@@ -5140,6 +5458,104 @@ export default function CabocloAgroCRM() {
                 className="flex-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
               >
                 <Check className="w-4 h-4" /> {isSaving ? 'Salvando...' : editingEstoqueId ? 'Salvar Edição' : 'Salvar Produto'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ENTRADA RÁPIDA DE ESTOQUE (REPOSIÇÃO DE PRODUTO EXISTENTE) */}
+      {entradaEstoqueModal && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="min-w-0">
+                <h3 className="font-bold text-emerald-300 text-sm flex items-center gap-1.5">
+                  <Package className="w-4 h-4 shrink-0" /> Entrada no Estoque
+                </h3>
+                <p className="text-xs text-slate-300 font-semibold truncate mt-0.5">
+                  {entradaEstoqueModal.item.nome}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEntradaEstoqueModal(null)}
+                className="text-slate-400 hover:text-white shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 flex items-center justify-between text-xs">
+              <span className="text-slate-400">Saldo Atual:</span>
+              <span className="font-extrabold text-white font-mono">
+                {entradaEstoqueModal.item.quantidade_disponivel} {entradaEstoqueModal.item.unidade_medida}
+              </span>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="text-[11px] text-slate-300 font-semibold block mb-1">
+                  Quantidade a Adicionar ({entradaEstoqueModal.item.unidade_medida}) *
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  autoFocus
+                  value={entradaEstoqueModal.quantidadeAdicionar}
+                  onChange={(e) =>
+                    setEntradaEstoqueModal({ ...entradaEstoqueModal, quantidadeAdicionar: e.target.value })
+                  }
+                  placeholder="Ex: 20"
+                  className="w-full bg-slate-950 border border-emerald-500/50 focus:border-emerald-400 rounded-lg p-2.5 text-white outline-none text-sm font-bold"
+                />
+              </div>
+
+              {parseFloat(entradaEstoqueModal.quantidadeAdicionar.replace(',', '.')) > 0 && (
+                <div className="bg-emerald-950/40 border border-emerald-700/50 rounded-xl p-2.5 flex items-center justify-between text-xs">
+                  <span className="text-emerald-300 font-semibold">Novo Saldo após entrada:</span>
+                  <span className="font-extrabold text-emerald-400 font-mono">
+                    {Math.round(
+                      (entradaEstoqueModal.item.quantidade_disponivel +
+                        parseFloat(entradaEstoqueModal.quantidadeAdicionar.replace(',', '.'))) *
+                        100
+                    ) / 100}{' '}
+                    {entradaEstoqueModal.item.unidade_medida}
+                  </span>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[11px] text-slate-400 font-semibold block mb-1">
+                  Preço Unitário (R$) — Opcional atualizar
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={entradaEstoqueModal.novoPreco}
+                  onChange={(e) =>
+                    setEntradaEstoqueModal({ ...entradaEstoqueModal, novoPreco: e.target.value })
+                  }
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setEntradaEstoqueModal(null)}
+                className="flex-1 bg-slate-800 text-slate-300 py-2.5 rounded-xl font-semibold text-xs"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmarEntradaEstoque}
+                disabled={isSaving}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg"
+              >
+                <Check className="w-4 h-4" /> {isSaving ? 'Salvando...' : 'Confirmar Entrada'}
               </button>
             </div>
           </div>
