@@ -2172,30 +2172,30 @@ export default function CabocloAgroCRM() {
       )}
 
       {/* Header com Botões de Ação */}
-      <header className="w-full bg-slate-900 border-b border-slate-800 px-4 py-3 sticky top-0 z-30 shadow-md">
-        <div className="max-w-md mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
+      <header className="w-full bg-slate-900 border-b border-slate-800 px-3 sm:px-4 py-3 sticky top-0 z-30 shadow-md">
+        <div className="max-w-2xl mx-auto flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <div className="bg-white p-1 rounded-xl shadow shrink-0 overflow-hidden w-9 h-9 flex items-center justify-center border border-slate-700">
               <img src="/logo.png" alt="Logo Caboclo" className="w-full h-full object-contain rounded-lg" />
             </div>
-            <div>
-              <h1 className="text-sm font-bold text-white leading-tight flex items-center gap-1.5">
-                Caboclo Agro CRM
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold text-white leading-tight flex items-center gap-1.5 flex-wrap">
+                <span className="truncate">Caboclo Agro CRM</span>
                 {isOnline ? (
-                  <span className="inline-flex items-center gap-0.5 text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-1.5 py-0.2 rounded font-normal" title="Conectado à internet">
+                  <span className="inline-flex items-center gap-0.5 text-[9px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-1.5 py-0.2 rounded font-normal shrink-0" title="Conectado à internet">
                     <Wifi className="w-2.5 h-2.5" /> On
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-0.5 text-[9px] bg-amber-950 text-amber-400 border border-amber-800 px-1.5 py-0.2 rounded font-normal" title="Modo sem internet">
+                  <span className="inline-flex items-center gap-0.5 text-[9px] bg-amber-950 text-amber-400 border border-amber-800 px-1.5 py-0.2 rounded font-normal shrink-0" title="Modo sem internet">
                     <WifiOff className="w-2.5 h-2.5" /> Off
                   </span>
                 )}
               </h1>
-              <span className="text-[10px] text-emerald-400 font-medium">Gestão e Otimização Inteligente</span>
+              <span className="text-[10px] text-emerald-400 font-medium block truncate">Gestão e Otimização Inteligente</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             {/* BOTÃO MANUAL DE USO (PDF) */}
             <a
               href="/manual-de-uso.html"
@@ -2204,17 +2204,18 @@ export default function CabocloAgroCRM() {
               className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-2 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all"
               title="Abrir Manual de Uso e salvar em PDF"
             >
-              <FileText className="w-3.5 h-3.5 text-emerald-400" />
+              <FileText className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               <span className="hidden sm:inline">Manual</span>
             </a>
 
             {/* BOTÃO RASCUNHOS COM BADGE DE CONTAGEM */}
             <button
               onClick={() => setIsRascunhosModalOpen(true)}
-              className="relative bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all"
+              className="relative bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 px-2 sm:px-2.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold flex items-center gap-1 transition-all"
               title="Ver rascunhos salvos"
             >
-              <Inbox className="w-3.5 h-3.5" /> Rascunhos
+              <Inbox className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden xs:inline sm:inline">Rascunhos</span>
               {rascunhos.length > 0 && (
                 <span className="bg-amber-400 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ml-0.5">
                   {rascunhos.length}
@@ -2224,20 +2225,20 @@ export default function CabocloAgroCRM() {
 
             <button
               onClick={() => abrirCadastroManual('cliente')}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all active:scale-95"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold flex items-center gap-1 shadow transition-all active:scale-95 whitespace-nowrap"
             >
-              <UserPlus className="w-3.5 h-3.5" /> + Cadastro
+              <UserPlus className="w-3.5 h-3.5 shrink-0" /> + Cadastro
             </button>
           </div>
         </div>
       </header>
 
       {/* Conteúdo Principal conforme Aba Ativa */}
-      <main className="flex-1 max-w-md w-full mx-auto px-4 pt-4 flex flex-col gap-5">
+      <main className="flex-1 max-w-2xl w-full mx-auto px-3 sm:px-4 pt-4 flex flex-col gap-5">
         {/* PAINEL DE LEMBRETES DA SEMANA SEPARADO EM 4 CATEGORIAS (Na aba central "Início") */}
         {activeTab === 'inicio' && (
-          <div className="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-amber-500/40 rounded-2xl p-4 space-y-3.5 shadow-lg">
-            <div className="flex items-center justify-between gap-2">
+          <div className="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-amber-500/40 rounded-2xl p-3.5 sm:p-4 space-y-3.5 shadow-lg">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
                 <BellRing className="w-4 h-4 text-amber-400 animate-bounce shrink-0" />
                 <span>Central de Lembretes</span>
@@ -2271,7 +2272,7 @@ export default function CabocloAgroCRM() {
             {abaLembretes === 'pendentes' ? (
               <div className="space-y-3.5">
                 {/* Seletor das 4 Categorias Separadas de Lembretes */}
-                <div className="grid grid-cols-5 gap-1 bg-slate-950 p-1.5 rounded-xl border border-slate-800 text-[10px] font-bold">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 bg-slate-950 p-1.5 rounded-xl border border-slate-800 text-[10px] font-bold">
                   <button
                     type="button"
                     onClick={() => setCategoriaLembrete('todos')}
@@ -3342,10 +3343,10 @@ export default function CabocloAgroCRM() {
         {/* ABA CADASTRO (CLIENTES, POSSIBILIDADES, TERCEIROS, FORNECEDORES E FUNCIONÁRIOS) */}
         {activeTab === 'cadastro' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between gap-2 px-1">
-              <div>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <div className="min-w-0">
                 <h2 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                  <Users className="w-4 h-4 text-emerald-400" /> Cadastros & Contatos ({contatosFiltrados.length})
+                  <Users className="w-4 h-4 text-emerald-400 shrink-0" /> Cadastros & Contatos ({contatosFiltrados.length})
                 </h2>
                 <p className="text-[11px] text-slate-500">
                   Clientes, possibilidades, terceiros/freteiros, fornecedores e equipe
@@ -3368,7 +3369,7 @@ export default function CabocloAgroCRM() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-xs">
               {[
                 { id: 'todos', label: '📋 Todos' },
                 { id: 'cliente', label: '👥 Clientes' },
@@ -3410,10 +3411,10 @@ export default function CabocloAgroCRM() {
                   >
                     {/* PARTE SUPERIOR CABEÇALHO */}
                     <div
-                      className="flex items-start justify-between gap-2 cursor-pointer select-none"
+                      className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 cursor-pointer select-none"
                       onClick={() => temDetalhes && toggleExpandContato(cId)}
                     >
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-bold text-sm text-white">{contato.nome}</span>
                           <span
@@ -3451,7 +3452,7 @@ export default function CabocloAgroCRM() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex flex-wrap items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <button
                           onClick={() => abrirEdicaoContato(contato)}
                           className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
@@ -5146,8 +5147,8 @@ export default function CabocloAgroCRM() {
       )}
 
       {/* NAVBAR MOBILE FOOTER */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 py-2 px-4 z-40 shadow-2xl">
-        <div className="max-w-md mx-auto grid grid-cols-5 items-center">
+      <nav className="fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 py-2 px-1 sm:px-4 z-40 shadow-2xl">
+        <div className="max-w-2xl mx-auto grid grid-cols-5 items-center">
           <button
             onClick={() => {
               setActiveTab('pedidos');

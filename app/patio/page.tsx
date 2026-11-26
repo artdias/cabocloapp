@@ -325,8 +325,8 @@ export default function TelaExclusivaPatioFuncionarios() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-12">
       {/* Cabeçalho Exclusivo do Pátio / Funcionários */}
-      <header className="w-full bg-slate-900 border-b border-amber-500/30 px-4 py-3 sticky top-0 z-30 shadow-md">
-        <div className="max-w-md mx-auto flex items-center justify-between gap-2">
+      <header className="w-full bg-slate-900 border-b border-amber-500/30 px-3 sm:px-4 py-3 sticky top-0 z-30 shadow-md">
+        <div className="max-w-2xl mx-auto flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="bg-white p-1 rounded-xl shadow shrink-0 w-9 h-9 flex items-center justify-center border border-slate-700">
               <img src="/logo.png" alt="Logo Caboclo" className="w-full h-full object-contain rounded-lg" />
@@ -361,9 +361,9 @@ export default function TelaExclusivaPatioFuncionarios() {
         </div>
       </header>
 
-      <main className="max-w-md mx-auto px-4 pt-4 space-y-4">
+      <main className="max-w-2xl mx-auto px-3 sm:px-4 pt-4 space-y-4">
         {/* Filtros de Status (Pendentes em Destaque) */}
-        <div className="grid grid-cols-4 gap-1 bg-slate-900 p-1.5 rounded-2xl border border-slate-800 text-[10px] font-bold">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800 text-[10px] font-bold">
           <button
             type="button"
             onClick={() => setFiltroStatus('pendentes')}

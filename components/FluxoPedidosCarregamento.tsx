@@ -597,7 +597,7 @@ export function FluxoPedidosCarregamento({
                 >
                   {/* Cabeçalho do Pedido */}
                   <div className="flex items-start justify-between gap-2 text-xs">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-bold text-white text-sm">{pedido.nome_cliente}</span>
                         <span
@@ -665,7 +665,7 @@ export function FluxoPedidosCarregamento({
                   </div>
 
                   {/* Barra de Etapas Clicável (Permite avançar ou voltar etapa facilmente) */}
-                  <div className="grid grid-cols-4 gap-1 bg-slate-950 p-1 rounded-xl border border-slate-850">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-850">
                     {etapasOrdem.map((st, idx) => {
                       const ativo = idx === idxEtapaAtual;
                       const concluido = idx < idxEtapaAtual;
@@ -1114,7 +1114,7 @@ export function FluxoPedidosCarregamento({
                       </div>
 
                       {/* 3 Botões de Aviso por WhatsApp: Funcionário, Caminhoneiro e Cliente */}
-                      <div className="grid grid-cols-3 gap-1.5 pt-1">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 pt-1">
                         <button
                           type="button"
                           onClick={() => {
@@ -1633,7 +1633,7 @@ export function FluxoPedidosCarregamento({
                 </code>
               </div>
 
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
                 <button
                   type="button"
                   onClick={copiarLinkPatio}
@@ -1677,7 +1677,7 @@ export function FluxoPedidosCarregamento({
           </div>
 
           {/* Abas de Filtro: Carregamentos Pendentes vs Já Carregados vs Todos */}
-          <div className="grid grid-cols-3 gap-1.5 bg-slate-900 p-1.5 rounded-xl border border-slate-800 text-[11px] font-bold">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 bg-slate-900 p-1.5 rounded-xl border border-slate-800 text-[11px] font-bold">
             <button
               type="button"
               onClick={() => setFiltroPatioStatus('pendentes')}
