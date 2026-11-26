@@ -23,6 +23,8 @@ import {
   parsePedidosDoBanco,
   salvarEstoqueNoBanco,
   carregarEstoqueDoBanco,
+  salvarLembretesEstadoNoBanco,
+  carregarLembretesEstadoDoBanco,
 } from '@/lib/supabase';
 import {
   SeletorAlfineteMapa,
@@ -355,7 +357,7 @@ export default function CabocloAgroCRM() {
   const estoquePrecoRef = useRef<HTMLInputElement>(null);
 
   // Estado do Estoque e Sub-abas de Pedidos
-  const [estoque, setEstoque] = useState<ItemEstoque[]>(DEMO_ESTOQUE);
+  const [estoque, setEstoque] = useState<ItemEstoque[]>(isSupabaseConfigured ? [] : DEMO_ESTOQUE);
   const [subAbaPedidos, setSubAbaPedidos] = useState<'pedidos' | 'estoque'>('pedidos');
   const [isNovoPedidoModalOpen, setIsNovoPedidoModalOpen] = useState<boolean>(false);
   const [isNovoItemEstoqueModalOpen, setIsNovoItemEstoqueModalOpen] = useState<boolean>(false);
@@ -437,8 +439,8 @@ export default function CabocloAgroCRM() {
   } | null>(null);
 
   // Listas de Dados
-  const [contatos, setContatos] = useState<Contato[]>(DEMO_CONTATOS);
-  const [pedidos, setPedidos] = useState<Pedido[]>(DEMO_PEDIDOS);
+  const [contatos, setContatos] = useState<Contato[]>(isSupabaseConfigured ? [] : DEMO_CONTATOS);
+  const [pedidos, setPedidos] = useState<Pedido[]>(isSupabaseConfigured ? [] : DEMO_PEDIDOS);
   const [loading, setLoading] = useState<boolean>(false);
 
   // Filtros de Contatos
@@ -695,41 +697,51 @@ export default function CabocloAgroCRM() {
       }
 
       // 2. Buscar dados atualizados do banco (fonte da verdade para todos os dispositivos)
-      const { data: dataContatos, error: errContatos } = await supabase
-        .from('contatos')
-        .select('*')
-        .order('created_at', { ascending: true });
+      const [
+        { data: dataContatos, error: errContatos },
+        { data: dataPedidos, error: errPedidos },
+        estoqueBanco,
+        lembretesBanco,
+      ] = await Promise.all([
+        supabase.from('contatos').select('*').order('created_at', { ascending: true }),
+        supabase.from('pedidos').select('*').order('created_at', { ascending: true }),
+        carregarEstoqueDoBanco(),
+        carregarLembretesEstadoDoBanco(),
+      ]);
+
+      if (salvandoRef.current) return;
 
       if (!errContatos && dataContatos) {
         const contatosDoBanco = parseContatosDoBanco(dataContatos);
-        if (contatosDoBanco.length > 0) {
-          setContatos(contatosDoBanco);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('caboclo_contatos', JSON.stringify(contatosDoBanco));
-          }
+        setContatos(contatosDoBanco);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('caboclo_contatos', JSON.stringify(contatosDoBanco));
         }
       }
-
-      const { data: dataPedidos, error: errPedidos } = await supabase
-        .from('pedidos')
-        .select('*')
-        .order('created_at', { ascending: true });
 
       if (!errPedidos && dataPedidos) {
         const pedidosDoBanco = parsePedidosDoBanco(dataPedidos);
-        if (pedidosDoBanco.length > 0) {
-          setPedidos(pedidosDoBanco);
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('caboclo_pedidos', JSON.stringify(pedidosDoBanco));
-          }
+        setPedidos(pedidosDoBanco);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('caboclo_pedidos', JSON.stringify(pedidosDoBanco));
         }
       }
 
-      const estoqueBanco = await carregarEstoqueDoBanco();
-      if (estoqueBanco && estoqueBanco.length > 0) {
+      if (estoqueBanco !== null) {
         setEstoque(estoqueBanco);
         if (typeof window !== 'undefined') {
           localStorage.setItem('caboclo_estoque', JSON.stringify(estoqueBanco));
+        }
+      }
+
+      if (lembretesBanco !== null) {
+        setLembretesAdiados(lembretesBanco.adiados);
+        setLembretesExcluidos(lembretesBanco.excluidos);
+        setLembretesRespondidos(lembretesBanco.respondidos);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('caboclo_lembretes_adiados', JSON.stringify(lembretesBanco.adiados));
+          localStorage.setItem('caboclo_lembretes_excluidos', JSON.stringify(lembretesBanco.excluidos));
+          localStorage.setItem('caboclo_lembretes_respondidos', JSON.stringify(lembretesBanco.respondidos));
         }
       }
     } catch (err) {
@@ -893,19 +905,31 @@ export default function CabocloAgroCRM() {
   const excluirContato = async (id: string) => {
     if (!confirm('Deseja realmente excluir este cadastro?')) return;
 
-    const idAlvo = DEMO_ID_MAP[id] || id;
-    const novosContatos = contatos.filter((c) => c.id !== id && c.id !== idAlvo && c.nome !== id);
-    setContatos(novosContatos);
+    salvandoRef.current = true;
+    try {
+      const contatoAlvo = contatos.find((c) => c.id === id || c.nome === id);
+      const idResolvido = contatoAlvo?.id || id;
+      const idAlvo = DEMO_ID_MAP[idResolvido] || idResolvido;
+      const novosContatos = contatos.filter(
+        (c) => c.id !== id && c.id !== idResolvido && c.id !== idAlvo && c.nome !== id
+      );
+      setContatos(novosContatos);
 
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('caboclo_contatos', JSON.stringify(novosContatos));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_contatos', JSON.stringify(novosContatos));
+      }
+
+      setIsManualModalOpen(false);
+      setEditingId(null);
+      setFormData(null);
+
+      const ok = await excluirContatoNoBanco(idAlvo);
+      if (!ok) {
+        setErrorMessage('⚠️ Contato removido apenas neste dispositivo. Falha ao sincronizar exclusão com a nuvem.');
+      }
+    } finally {
+      salvandoRef.current = false;
     }
-
-    setIsManualModalOpen(false);
-    setEditingId(null);
-    setFormData(null);
-
-    await excluirContatoNoBanco(idAlvo);
   };
 
   // Gravação de Voz
@@ -1135,7 +1159,10 @@ export default function CabocloAgroCRM() {
         setStatus('✅ Salvo com sucesso!');
 
         if (contatoEditadoObj) {
-          await salvarContatoNoBanco(contatoEditadoObj);
+          const ok = await salvarContatoNoBanco(contatoEditadoObj);
+          if (!ok) {
+            setErrorMessage('⚠️ Alteração salva apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+          }
         }
       } else {
         // Verifica se já existe exatamente o mesmo nome + tipo para evitar duplicação acidental
@@ -1223,9 +1250,13 @@ export default function CabocloAgroCRM() {
         setTranscript('');
         setStatus('✅ Salvo com sucesso!');
 
-        await salvarContatoNoBanco(novoContato);
+        const okContato = await salvarContatoNoBanco(novoContato);
+        let okPedido = true;
         if (pedidoCriadoParaBanco) {
-          await salvarPedidoNoBanco(pedidoCriadoParaBanco);
+          okPedido = await salvarPedidoNoBanco(pedidoCriadoParaBanco);
+        }
+        if (!okContato || !okPedido) {
+          setErrorMessage('⚠️ Cadastro salvo apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
         }
       }
 
@@ -1281,55 +1312,64 @@ export default function CabocloAgroCRM() {
     pedidoAtualizado: Pedido,
     descontarEstoque?: { toneladas?: number; sacos?: number }
   ) => {
-    const idNorm = normalizarId(pedidoAtualizado.id);
-    const pedFinal = { ...pedidoAtualizado, id: idNorm };
+    salvandoRef.current = true;
+    try {
+      const idNorm = normalizarId(pedidoAtualizado.id);
+      const pedFinal = { ...pedidoAtualizado, id: idNorm };
 
-    const novaListaPed = pedidos.map((p) =>
-      p.id === pedidoAtualizado.id || p.id === idNorm ? pedFinal : p
-    );
-    setPedidos(novaListaPed);
+      const novaListaPed = pedidos.map((p) =>
+        p.id === pedidoAtualizado.id || p.id === idNorm ? pedFinal : p
+      );
+      setPedidos(novaListaPed);
 
-    let novoEstoque = [...estoque];
-    if (descontarEstoque) {
-      if (pedFinal.itens_venda && pedFinal.itens_venda.length > 0) {
-        const fatorEscala =
-          pedFinal.quantidade_toneladas_num && pedFinal.quantidade_toneladas_num > 0 && descontarEstoque.toneladas
-            ? descontarEstoque.toneladas / pedFinal.quantidade_toneladas_num
-            : 1;
-
-        for (const it of pedFinal.itens_venda) {
-          const idx = novoEstoque.findIndex((e) => e.id === it.estoque_id);
-          if (idx >= 0) {
-            const pEst = novoEstoque[idx];
-            const qtdDescontar =
-              pEst.unidade_medida === 'sacos' && descontarEstoque.sacos && descontarEstoque.sacos > 0
-                ? descontarEstoque.sacos
-                : Math.round(it.quantidade * fatorEscala * 100) / 100;
-            novoEstoque[idx] = {
-              ...pEst,
-              quantidade_disponivel: Math.max(0, pEst.quantidade_disponivel - qtdDescontar),
-            };
-          }
-        }
-      } else if (descontarEstoque.toneladas && novoEstoque.length > 0) {
-        novoEstoque[0] = {
-          ...novoEstoque[0],
-          quantidade_disponivel: Math.max(0, novoEstoque[0].quantidade_disponivel - descontarEstoque.toneladas),
-        };
-      }
-      setEstoque(novoEstoque);
-    }
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('caboclo_pedidos', JSON.stringify(novaListaPed));
+      let novoEstoque = [...estoque];
       if (descontarEstoque) {
-        localStorage.setItem('caboclo_estoque', JSON.stringify(novoEstoque));
-      }
-    }
+        if (pedFinal.itens_venda && pedFinal.itens_venda.length > 0) {
+          const fatorEscala =
+            pedFinal.quantidade_toneladas_num && pedFinal.quantidade_toneladas_num > 0 && descontarEstoque.toneladas
+              ? descontarEstoque.toneladas / pedFinal.quantidade_toneladas_num
+              : 1;
 
-    await salvarPedidoNoBanco(pedFinal);
-    if (descontarEstoque) {
-      await salvarEstoqueNoBanco(novoEstoque);
+          for (const it of pedFinal.itens_venda) {
+            const idx = novoEstoque.findIndex((e) => e.id === it.estoque_id);
+            if (idx >= 0) {
+              const pEst = novoEstoque[idx];
+              const qtdDescontar =
+                pEst.unidade_medida === 'sacos' && descontarEstoque.sacos && descontarEstoque.sacos > 0
+                  ? descontarEstoque.sacos
+                  : Math.round(it.quantidade * fatorEscala * 100) / 100;
+              novoEstoque[idx] = {
+                ...pEst,
+                quantidade_disponivel: Math.max(0, pEst.quantidade_disponivel - qtdDescontar),
+              };
+            }
+          }
+        } else if (descontarEstoque.toneladas && novoEstoque.length > 0) {
+          novoEstoque[0] = {
+            ...novoEstoque[0],
+            quantidade_disponivel: Math.max(0, novoEstoque[0].quantidade_disponivel - descontarEstoque.toneladas),
+          };
+        }
+        setEstoque(novoEstoque);
+      }
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_pedidos', JSON.stringify(novaListaPed));
+        if (descontarEstoque) {
+          localStorage.setItem('caboclo_estoque', JSON.stringify(novoEstoque));
+        }
+      }
+
+      const okPed = await salvarPedidoNoBanco(pedFinal);
+      let okEst = true;
+      if (descontarEstoque) {
+        okEst = await salvarEstoqueNoBanco(novoEstoque);
+      }
+      if (!okPed || !okEst) {
+        setErrorMessage('⚠️ Atualização salva apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+      }
+    } finally {
+      salvandoRef.current = false;
     }
   };
 
@@ -1337,15 +1377,23 @@ export default function CabocloAgroCRM() {
   const excluirPedido = async (id: string) => {
     if (!confirm('Deseja realmente excluir este pedido?')) return;
 
-    const idAlvo = DEMO_ID_MAP[id] || id;
-    const novaLista = pedidos.filter((p) => p.id !== id && p.id !== idAlvo);
-    setPedidos(novaLista);
+    salvandoRef.current = true;
+    try {
+      const idAlvo = DEMO_ID_MAP[id] || id;
+      const novaLista = pedidos.filter((p) => p.id !== id && p.id !== idAlvo);
+      setPedidos(novaLista);
 
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('caboclo_pedidos', JSON.stringify(novaLista));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_pedidos', JSON.stringify(novaLista));
+      }
+
+      const ok = await excluirPedidoNoBanco(idAlvo);
+      if (!ok) {
+        setErrorMessage('⚠️ Pedido excluído apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+      }
+    } finally {
+      salvandoRef.current = false;
     }
-
-    await excluirPedidoNoBanco(idAlvo);
   };
 
   const salvarNovoPedido = async () => {
@@ -1489,7 +1537,10 @@ export default function CabocloAgroCRM() {
         setIsNovoPedidoModalOpen(false);
         setStatus('✅ Pré-Pedido atualizado com sucesso!');
 
-        await salvarPedidoNoBanco(updatedPed);
+        const okPedUpd = await salvarPedidoNoBanco(updatedPed);
+        if (!okPedUpd) {
+          setErrorMessage('⚠️ Pré-Pedido salvo apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+        }
         setTimeout(() => setStatus('Pronto para gravar'), 2000);
         return;
       }
@@ -1532,7 +1583,10 @@ export default function CabocloAgroCRM() {
       setIsNovoPedidoModalOpen(false);
       setStatus('✅ Pré-Pedido criado! Agora confira o frete e confirme com o cliente.');
 
-      await salvarPedidoNoBanco(novoPed);
+      const okNovoPed = await salvarPedidoNoBanco(novoPed);
+      if (!okNovoPed) {
+        setErrorMessage('⚠️ Pré-Pedido salvo apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+      }
       setTimeout(() => setStatus('Pronto para gravar'), 2000);
     } finally {
       salvandoRef.current = false;
@@ -1560,14 +1614,22 @@ export default function CabocloAgroCRM() {
   const excluirItemEstoque = async (id: string) => {
     if (!confirm('Deseja realmente excluir este produto do estoque?')) return;
 
-    const novaLista = estoque.filter((item) => item.id !== id);
-    setEstoque(novaLista);
+    salvandoRef.current = true;
+    try {
+      const novaLista = estoque.filter((item) => item.id !== id);
+      setEstoque(novaLista);
 
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('caboclo_estoque', JSON.stringify(novaLista));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_estoque', JSON.stringify(novaLista));
+      }
+
+      const ok = await salvarEstoqueNoBanco(novaLista);
+      if (!ok) {
+        setErrorMessage('⚠️ Produto removido apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+      }
+    } finally {
+      salvandoRef.current = false;
     }
-
-    await salvarEstoqueNoBanco(novaLista);
   };
 
   const salvarNovoItemEstoque = async () => {
@@ -1660,7 +1722,10 @@ export default function CabocloAgroCRM() {
         observacao: '',
       });
 
-      await salvarEstoqueNoBanco(novaListaEstoque);
+      const okEst = await salvarEstoqueNoBanco(novaListaEstoque);
+      if (!okEst) {
+        setErrorMessage('⚠️ Estoque salvo apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+      }
     } finally {
       salvandoRef.current = false;
       setIsSaving(false);
@@ -1688,6 +1753,11 @@ export default function CabocloAgroCRM() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('caboclo_lembretes_adiados', JSON.stringify(novosAdiados));
     }
+    salvarLembretesEstadoNoBanco({
+      adiados: novosAdiados,
+      excluidos: lembretesExcluidos,
+      respondidos: lembretesRespondidos,
+    });
     setAdiarModal(null);
   };
 
@@ -1698,6 +1768,11 @@ export default function CabocloAgroCRM() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('caboclo_lembretes_excluidos', JSON.stringify(novosExcluidos));
     }
+    salvarLembretesEstadoNoBanco({
+      adiados: lembretesAdiados,
+      excluidos: novosExcluidos,
+      respondidos: lembretesRespondidos,
+    });
   };
 
   const marcarComoRespondido = (
@@ -1727,6 +1802,11 @@ export default function CabocloAgroCRM() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('caboclo_lembretes_respondidos', JSON.stringify(novosRespondidos));
     }
+    salvarLembretesEstadoNoBanco({
+      adiados: lembretesAdiados,
+      excluidos: lembretesExcluidos,
+      respondidos: novosRespondidos,
+    });
   };
 
   const restaurarLembreteRespondido = (id: string) => {
@@ -1743,6 +1823,11 @@ export default function CabocloAgroCRM() {
       localStorage.setItem('caboclo_lembretes_excluidos', JSON.stringify(novosExcluidos));
       localStorage.setItem('caboclo_lembretes_adiados', JSON.stringify(novosAdiados));
     }
+    salvarLembretesEstadoNoBanco({
+      adiados: novosAdiados,
+      excluidos: novosExcluidos,
+      respondidos: novosRespondidos,
+    });
   };
 
   // WhatsApp Message Generator
@@ -1811,82 +1896,106 @@ export default function CabocloAgroCRM() {
 
   // Alternar Status Financeiro (Pago / Pendente)
   const alternarStatusFinanceiro = async (pedidoId: string) => {
-    let pedidoAlterado: Pedido | null = null;
-    const novosPedidos = pedidos.map((p) => {
-      if (p.id === pedidoId) {
-        const novoStatus: StatusFinanceiro = p.status_financeiro === 'pago' ? 'pendente' : 'pago';
-        const qtdParc = p.qtd_parcelas && p.qtd_parcelas > 1 ? p.qtd_parcelas : 1;
-        pedidoAlterado = {
-          ...p,
-          status_financeiro: novoStatus,
-          parcelas_pagas: novoStatus === 'pago' ? qtdParc : Math.max(0, (p.parcelas_pagas || 0) - 1),
-        };
-        return pedidoAlterado;
+    salvandoRef.current = true;
+    try {
+      let pedidoAlterado: Pedido | null = null;
+      const novosPedidos = pedidos.map((p) => {
+        if (p.id === pedidoId) {
+          const novoStatus: StatusFinanceiro = p.status_financeiro === 'pago' ? 'pendente' : 'pago';
+          const qtdParc = p.qtd_parcelas && p.qtd_parcelas > 1 ? p.qtd_parcelas : 1;
+          pedidoAlterado = {
+            ...p,
+            status_financeiro: novoStatus,
+            parcelas_pagas: novoStatus === 'pago' ? qtdParc : Math.max(0, (p.parcelas_pagas || 0) - 1),
+          };
+          return pedidoAlterado;
+        }
+        return p;
+      });
+
+      setPedidos(novosPedidos);
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
       }
-      return p;
-    });
 
-    setPedidos(novosPedidos);
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
-    }
-
-    if (pedidoAlterado) {
-      await salvarPedidoNoBanco(pedidoAlterado);
+      if (pedidoAlterado) {
+        const ok = await salvarPedidoNoBanco(pedidoAlterado);
+        if (!ok) {
+          setErrorMessage('⚠️ Status financeiro salvo apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+        }
+      }
+    } finally {
+      salvandoRef.current = false;
     }
   };
 
   // Confirmar 1ª ou próxima parcela e deixar o restante em aberto (ou quitar se for a última)
   const confirmarParcelaPedido = async (pedidoId: string) => {
-    let pedidoAlterado: Pedido | null = null;
-    const novosPedidos = pedidos.map((p) => {
-      if (p.id === pedidoId) {
-        const qtdParc = p.qtd_parcelas && p.qtd_parcelas > 1 ? Number(p.qtd_parcelas) : 1;
-        const atuaisPagas = Math.min(qtdParc, Math.max(0, Number(p.parcelas_pagas || 0)));
-        const novasPagas = Math.min(qtdParc, atuaisPagas + 1);
-        const quitouTodas = novasPagas >= qtdParc;
-        pedidoAlterado = {
-          ...p,
-          parcelas_pagas: novasPagas,
-          status_financeiro: quitouTodas ? 'pago' : 'pendente',
-        };
-        return pedidoAlterado;
-      }
-      return p;
-    });
+    salvandoRef.current = true;
+    try {
+      let pedidoAlterado: Pedido | null = null;
+      const novosPedidos = pedidos.map((p) => {
+        if (p.id === pedidoId) {
+          const qtdParc = p.qtd_parcelas && p.qtd_parcelas > 1 ? Number(p.qtd_parcelas) : 1;
+          const atuaisPagas = Math.min(qtdParc, Math.max(0, Number(p.parcelas_pagas || 0)));
+          const novasPagas = Math.min(qtdParc, atuaisPagas + 1);
+          const quitouTodas = novasPagas >= qtdParc;
+          pedidoAlterado = {
+            ...p,
+            parcelas_pagas: novasPagas,
+            status_financeiro: quitouTodas ? 'pago' : 'pendente',
+          };
+          return pedidoAlterado;
+        }
+        return p;
+      });
 
-    setPedidos(novosPedidos);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
-    }
-    if (pedidoAlterado) {
-      await salvarPedidoNoBanco(pedidoAlterado);
+      setPedidos(novosPedidos);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
+      }
+      if (pedidoAlterado) {
+        const ok = await salvarPedidoNoBanco(pedidoAlterado);
+        if (!ok) {
+          setErrorMessage('⚠️ Parcela salva apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+        }
+      }
+    } finally {
+      salvandoRef.current = false;
     }
   };
 
   // Quitar a dívida toda do pedido (mesmo que seja parcelado)
   const quitarDividaTotalPedido = async (pedidoId: string) => {
-    let pedidoAlterado: Pedido | null = null;
-    const novosPedidos = pedidos.map((p) => {
-      if (p.id === pedidoId) {
-        const qtdParc = p.qtd_parcelas && p.qtd_parcelas > 1 ? Number(p.qtd_parcelas) : 1;
-        pedidoAlterado = {
-          ...p,
-          parcelas_pagas: qtdParc,
-          status_financeiro: 'pago',
-        };
-        return pedidoAlterado;
-      }
-      return p;
-    });
+    salvandoRef.current = true;
+    try {
+      let pedidoAlterado: Pedido | null = null;
+      const novosPedidos = pedidos.map((p) => {
+        if (p.id === pedidoId) {
+          const qtdParc = p.qtd_parcelas && p.qtd_parcelas > 1 ? Number(p.qtd_parcelas) : 1;
+          pedidoAlterado = {
+            ...p,
+            parcelas_pagas: qtdParc,
+            status_financeiro: 'pago',
+          };
+          return pedidoAlterado;
+        }
+        return p;
+      });
 
-    setPedidos(novosPedidos);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
-    }
-    if (pedidoAlterado) {
-      await salvarPedidoNoBanco(pedidoAlterado);
+      setPedidos(novosPedidos);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_pedidos', JSON.stringify(novosPedidos));
+      }
+      if (pedidoAlterado) {
+        const ok = await salvarPedidoNoBanco(pedidoAlterado);
+        if (!ok) {
+          setErrorMessage('⚠️ Quitação salva apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+        }
+      }
+    } finally {
+      salvandoRef.current = false;
     }
   };
 

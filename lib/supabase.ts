@@ -533,8 +533,55 @@ export async function carregarEstoqueDoBanco(): Promise<ItemEstoque[] | null> {
 
   try {
     const parsed = JSON.parse(data[0].texto_transcrito);
-    if (Array.isArray(parsed) && parsed.length > 0) {
+    if (Array.isArray(parsed)) {
       return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+export interface LembretesSyncState {
+  adiados: Record<string, string>;
+  excluidos: string[];
+  respondidos: any[];
+}
+
+export async function salvarLembretesEstadoNoBanco(state: LembretesSyncState): Promise<boolean> {
+  if (!isSupabaseConfigured) return false;
+  const { error } = await supabase.from('atendimentos').insert([
+    {
+      nome_cliente: '__LEMBRETES_SYNC__',
+      texto_transcrito: JSON.stringify(state),
+    },
+  ]);
+  if (error) {
+    console.warn('Erro ao salvar lembretes no Supabase:', error.message);
+    return false;
+  }
+  return true;
+}
+
+export async function carregarLembretesEstadoDoBanco(): Promise<LembretesSyncState | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from('atendimentos')
+    .select('texto_transcrito, created_at')
+    .eq('nome_cliente', '__LEMBRETES_SYNC__')
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (error || !data || data.length === 0 || !data[0].texto_transcrito) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(data[0].texto_transcrito);
+    if (parsed && typeof parsed === 'object') {
+      return {
+        adiados: parsed.adiados && typeof parsed.adiados === 'object' ? parsed.adiados : {},
+        excluidos: Array.isArray(parsed.excluidos) ? parsed.excluidos : [],
+        respondidos: Array.isArray(parsed.respondidos) ? parsed.respondidos : [],
+      };
     }
   } catch {}
   return null;

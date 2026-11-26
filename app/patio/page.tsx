@@ -116,7 +116,7 @@ export default function TelaExclusivaPatioFuncionarios() {
           }
         }
 
-        if (estRemoto && estRemoto.length > 0) {
+        if (estRemoto !== null) {
           setEstoque(estRemoto);
           if (typeof window !== 'undefined') {
             localStorage.setItem('caboclo_estoque', JSON.stringify(estRemoto));
