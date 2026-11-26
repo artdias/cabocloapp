@@ -164,8 +164,12 @@ export default function TelaExclusivaPatioFuncionarios() {
   const funcionarios = contatos.filter((c) => c.tipo === 'funcionario');
   const terceiros = contatos.filter((c) => c.tipo === 'terceiro');
 
-  // Lista de pedidos de venda relevantes para o pátio
-  const pedidosVenda = pedidos.filter((p) => p.tipo_operacao === 'venda');
+  // Lista de pedidos de venda relevantes para o pátio (apenas a partir da 3ª fase: agendado ou carregado)
+  const pedidosVenda = pedidos.filter(
+    (p) =>
+      p.tipo_operacao === 'venda' &&
+      (p.etapa_pedido === 'agendado' || p.etapa_pedido === 'carregado')
+  );
 
   const pendentesCount = pedidosVenda.filter(
     (p) => p.etapa_pedido !== 'carregado'

@@ -359,28 +359,28 @@ export function FluxoPedidosCarregamento({
   const qtdCargasPendentes = useMemo(
     () =>
       pedidos.filter(
-        (p) => p.tipo_operacao === 'venda' && (p.etapa_pedido || 'pre_pedido') !== 'carregado'
+        (p) => p.tipo_operacao === 'venda' && p.etapa_pedido === 'agendado'
       ).length,
     [pedidos]
   );
 
-  // Pedidos para a Tela de Funcionários (Pendentes vs Carregados vs Todos)
+  // Pedidos para a Tela de Funcionários (somente a partir da 3ª fase: agendado ou carregado)
   const pedidosCarregamentoFuncionarios = useMemo(() => {
     return [...pedidos]
       .filter((p) => {
         if (p.tipo_operacao !== 'venda') return false;
         const etapa = p.etapa_pedido || 'pre_pedido';
         if (filtroPatioStatus === 'pendentes') {
-          return etapa !== 'carregado';
+          return etapa === 'agendado';
         }
         if (filtroPatioStatus === 'carregados') {
           return etapa === 'carregado';
         }
-        return true;
+        return etapa === 'agendado' || etapa === 'carregado';
       })
       .sort((a, b) => {
         const dA = a.data_carregamento || a.data_compra || '9999-12-31';
-        const dB = b.data_carregamento || a.data_compra || '9999-12-31';
+        const dB = b.data_carregamento || b.data_compra || '9999-12-31';
         return dA.localeCompare(dB);
       });
   }, [pedidos, filtroPatioStatus]);
@@ -845,68 +845,59 @@ export function FluxoPedidosCarregamento({
 
                       {pedido.tem_frete !== false && (
                         <>
-                          {/* Lista rápida de caminhoneiros para ligar/cotar */}
-                          <div className="space-y-1 max-h-36 overflow-y-auto pr-0.5">
-                            {terceiros.map((t) => {
-                              const cap = t.capacidade_carga_toneladas || 10;
-                              const viagens = cap >= qtdTon ? 1 : Math.ceil(qtdTon / cap);
-                              const isEscolhido = pedido.terceiro_id === t.id;
+                          {/* Seletor Dropdown de Caminhoneiro / Terceiro + Botão Cotar */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] text-slate-400 block">
+                              Caminhoneiro / Terceiro ({terceiros.length} disponíveis)
+                            </label>
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5">
+                              <select
+                                value={pedido.terceiro_id || ''}
+                                onChange={(e) =>
+                                  onAtualizarPedido({
+                                    ...pedido,
+                                    terceiro_id: e.target.value || null,
+                                  })
+                                }
+                                className="flex-1 min-w-0 bg-slate-900 border border-slate-700 focus:border-amber-500 rounded-lg p-2 text-[11px] text-white outline-none"
+                              >
+                                <option value="">-- Selecione o Caminhoneiro / Terceiro --</option>
+                                {terceiros.map((t) => {
+                                  const cap = t.capacidade_carga_toneladas || 10;
+                                  const viagens = cap >= qtdTon ? 1 : Math.ceil(qtdTon / cap);
+                                  return (
+                                    <option key={t.id} value={t.id}>
+                                      🚚 {t.nome} • {t.tipo_veiculo || 'Caminhão'} ({cap}t • {viagens}{' '}
+                                      {viagens === 1 ? 'viagem' : 'viagens'})
+                                    </option>
+                                  );
+                                })}
+                              </select>
 
-                              return (
-                                <div
-                                  key={t.id}
-                                  className={`flex items-center justify-between p-2 rounded-lg border text-[11px] ${
-                                    isEscolhido
-                                      ? 'bg-amber-950/40 border-amber-500/60'
-                                      : 'bg-slate-900 border-slate-800'
-                                  }`}
+                              {motoristaObj && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const linkMapa =
+                                      clienteObj?.latitude && clienteObj?.longitude
+                                        ? ` (Mapa: https://www.google.com/maps?q=${clienteObj.latitude},${clienteObj.longitude})`
+                                        : '';
+                                    onDispararWhatsApp(
+                                      motoristaObj.telefone,
+                                      motoristaObj.nome,
+                                      `Olá parceiro ${motoristaObj.nome}! Estamos cotando um frete de ${
+                                        pedido.quantidade || `${qtdTon}t`
+                                      } de ${pedido.produto || 'Silagem'} para entregar em ${
+                                        clienteObj?.endereco_fazenda || pedido.nome_cliente
+                                      }${linkMapa}. Qual o valor do seu frete e disponibilidade?`
+                                    );
+                                  }}
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-2 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 shrink-0 transition-all active:scale-95"
                                 >
-                                  <div>
-                                    <span className="font-bold text-white block">{t.nome}</span>
-                                    <span className="text-[10px] text-slate-400">
-                                      {t.tipo_veiculo} ({cap}t) • {viagens}{' '}
-                                      {viagens === 1 ? 'viagem' : 'viagens'}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        onAtualizarPedido({ ...pedido, terceiro_id: t.id })
-                                      }
-                                      className={`px-2 py-1 rounded text-[10px] font-bold ${
-                                        isEscolhido
-                                          ? 'bg-amber-500 text-slate-950'
-                                          : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                                      }`}
-                                    >
-                                      {isEscolhido ? '✓ Escolhido' : 'Escolher'}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const linkMapa =
-                                          clienteObj?.latitude && clienteObj?.longitude
-                                            ? ` (Mapa: https://www.google.com/maps?q=${clienteObj.latitude},${clienteObj.longitude})`
-                                            : '';
-                                        onDispararWhatsApp(
-                                          t.telefone,
-                                          t.nome,
-                                          `Olá parceiro ${t.nome}! Estamos cotando um frete de ${
-                                            pedido.quantidade || `${qtdTon}t`
-                                          } de ${pedido.produto || 'Silagem'} para entregar em ${
-                                            clienteObj?.endereco_fazenda || pedido.nome_cliente
-                                          }${linkMapa}. Qual o valor do seu frete e disponibilidade?`
-                                        );
-                                      }}
-                                      className="bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1"
-                                    >
-                                      <img src="/whatsapp.png" alt="WA" className="w-3 h-3" /> Cotar
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
+                                  <img src="/whatsapp.png" alt="WA" className="w-3.5 h-3.5" /> Cotar Frete
+                                </button>
+                              )}
+                            </div>
                           </div>
 
                           {/* Input do Valor do Frete Cobrado */}
@@ -1709,7 +1700,15 @@ export function FluxoPedidosCarregamento({
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Todos ({pedidos.filter((p) => p.tipo_operacao === 'venda').length})
+              Todos (
+                {
+                  pedidos.filter(
+                    (p) =>
+                      p.tipo_operacao === 'venda' &&
+                      (p.etapa_pedido === 'agendado' || p.etapa_pedido === 'carregado')
+                  ).length
+                }
+              )
             </button>
           </div>
 
