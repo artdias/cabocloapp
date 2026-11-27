@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Contato, ItemEstoque, Pedido, formatarDataBR } from '@/lib/supabase';
+import { Contato, ItemEstoque, Pedido, PivoIrrigacao, formatarDataBR } from '@/lib/supabase';
 import {
   FileSpreadsheet,
   FileText,
@@ -10,7 +10,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 
-type TipoRelatorio = 'pedidos' | 'financeiro' | 'estoque' | 'cadastros';
+type TipoRelatorio = 'pedidos' | 'financeiro' | 'estoque' | 'cadastros' | 'pivos';
 
 interface ColunaDef {
   id: string;
@@ -65,6 +65,17 @@ const COLUNAS_POR_TIPO: Record<TipoRelatorio, ColunaDef[]> = {
     { id: 'detalhe_extra', label: 'Detalhes Específicos' },
     { id: 'observacao', label: 'Observação' },
   ],
+  pivos: [
+    { id: 'nome', label: 'Pivô' },
+    { id: 'area_hectares', label: 'Área (ha)' },
+    { id: 'cultura_atual', label: 'Cultura Atual' },
+    { id: 'produtos', label: 'Produtos Vinculados' },
+    { id: 'qtd_estoque', label: 'Saldo Estoque' },
+    { id: 'qtd_vendida', label: 'Qtd. Vendida' },
+    { id: 'producao_total', label: 'Produção Total' },
+    { id: 'produtividade_ha', label: 'Produtividade / ha' },
+    { id: 'faturamento', label: 'Faturamento (R$)' },
+  ],
 };
 
 const COLUNAS_PADRAO: Record<TipoRelatorio, string[]> = {
@@ -72,12 +83,14 @@ const COLUNAS_PADRAO: Record<TipoRelatorio, string[]> = {
   financeiro: ['data_compra', 'nome_cliente', 'produto', 'valor_base', 'valor_frete', 'valor_total', 'parcelas', 'status_financeiro'],
   estoque: ['nome', 'quantidade_disponivel', 'unidade_medida', 'preco_unitario', 'valor_estoque', 'status_estoque'],
   cadastros: ['nome', 'tipo', 'classificacao', 'telefone', 'endereco', 'detalhe_extra'],
+  pivos: ['nome', 'area_hectares', 'cultura_atual', 'qtd_estoque', 'qtd_vendida', 'producao_total', 'produtividade_ha', 'faturamento'],
 };
 
 interface RelatoriosPainelProps {
   pedidos: Pedido[];
   contatos: Contato[];
   estoque: ItemEstoque[];
+  pivos?: PivoIrrigacao[];
 }
 
 function escapeCsvCell(val: string | number | null | undefined): string {
@@ -118,6 +131,7 @@ export default function RelatoriosPainel({
   pedidos,
   contatos,
   estoque,
+  pivos = [],
 }: RelatoriosPainelProps) {
   const [tipoRelatorio, setTipoRelatorio] = useState<TipoRelatorio>('pedidos');
   const [dataInicio, setDataInicio] = useState<string>('');
@@ -131,6 +145,7 @@ export default function RelatoriosPainel({
   const [filtroEstoqueStatus, setFiltroEstoqueStatus] = useState<string>('todos');
   const [filtroTipoContato, setFiltroTipoContato] = useState<string>('todos');
   const [filtroClassificacao, setFiltroClassificacao] = useState<string>('todas');
+  const [filtroPivoId, setFiltroPivoId] = useState<string>('todos');
 
   const [colunasSelecionadas, setColunasSelecionadas] = useState<Record<TipoRelatorio, string[]>>(
     COLUNAS_PADRAO
@@ -162,6 +177,7 @@ export default function RelatoriosPainel({
     setFiltroEstoqueStatus('todos');
     setFiltroTipoContato('todos');
     setFiltroClassificacao('todas');
+    setFiltroPivoId('todos');
   };
 
   // Cálculo dos dados filtrados em formato tabular uniforme
@@ -290,6 +306,77 @@ export default function RelatoriosPainel({
       };
     }
 
+    if (tipoRelatorio === 'pivos') {
+      const pivosFiltrados = pivos.filter((pv) => {
+        if (filtroPivoId !== 'todos' && pv.id !== filtroPivoId) return false;
+        if (q) {
+          const alvo = `${pv.nome} ${pv.cultura_atual || ''} ${pv.area_hectares || ''} ${pv.observacao || ''}`.toLowerCase();
+          if (!alvo.includes(q)) return false;
+        }
+        return true;
+      });
+
+      let somaEstoqueGeral = 0;
+      let somaVendidoGeral = 0;
+      let somaProducaoGeral = 0;
+      let somaFaturamentoGeral = 0;
+
+      const rows = pivosFiltrados.map((pv) => {
+        const itensDoPivo = estoque.filter((it) => it.pivo_id === pv.id);
+        const idsItensPivo = new Set(itensDoPivo.map((it) => it.id));
+        const qtdEstoque = itensDoPivo.reduce((acc, it) => acc + Number(it.quantidade_disponivel || 0), 0);
+
+        let qtdVendida = 0;
+        let faturamentoPivo = 0;
+
+        for (const ped of pedidos) {
+          if (ped.tipo_operacao !== 'venda') continue;
+          if (dataInicio && ped.data_compra < dataInicio) continue;
+          if (dataFim && ped.data_compra > dataFim) continue;
+          if (ped.itens_venda && ped.itens_venda.length > 0) {
+            for (const iv of ped.itens_venda) {
+              if (idsItensPivo.has(iv.estoque_id)) {
+                qtdVendida += Number(iv.quantidade || 0);
+                faturamentoPivo += Number(iv.subtotal || 0);
+              }
+            }
+          }
+        }
+
+        const producaoTotal = Math.round((qtdEstoque + qtdVendida) * 100) / 100;
+        const areaNumMatch = (pv.area_hectares || '').match(/(\d+([.,]\d+)?)/);
+        const areaNum = areaNumMatch ? parseFloat(areaNumMatch[1].replace(',', '.')) : 0;
+        const prodPorHa = areaNum > 0 ? (producaoTotal / areaNum).toFixed(2) : '-';
+
+        somaEstoqueGeral += qtdEstoque;
+        somaVendidoGeral += qtdVendida;
+        somaProducaoGeral += producaoTotal;
+        somaFaturamentoGeral += faturamentoPivo;
+
+        return {
+          nome: pv.nome,
+          area_hectares: pv.area_hectares || '-',
+          cultura_atual: pv.cultura_atual || '-',
+          produtos: itensDoPivo.map((it) => it.nome).join(', ') || 'Nenhum produto vinculado',
+          qtd_estoque: String(Math.round(qtdEstoque * 100) / 100),
+          qtd_vendida: String(Math.round(qtdVendida * 100) / 100),
+          producao_total: String(producaoTotal),
+          produtividade_ha: prodPorHa === '-' ? '-' : `${prodPorHa} / ha`,
+          faturamento: formatarMoeda(faturamentoPivo),
+        } as Record<string, string>;
+      });
+
+      return {
+        linhas: rows,
+        resumo: [
+          { label: 'Pivôs Analisados', valor: String(rows.length) },
+          { label: 'Saldo em Estoque', valor: String(Math.round(somaEstoqueGeral * 100) / 100) },
+          { label: 'Total Vendido / Produzido', valor: `${Math.round(somaVendidoGeral * 100) / 100} / ${Math.round(somaProducaoGeral * 100) / 100}` },
+          { label: 'Faturamento dos Pivôs', valor: `R$ ${formatarMoeda(somaFaturamentoGeral)}` },
+        ],
+      };
+    }
+
     // cadastros
     const filtrados = contatos.filter((c) => {
       if (filtroTipoContato !== 'todos' && c.tipo !== filtroTipoContato) return false;
@@ -358,6 +445,8 @@ export default function RelatoriosPainel({
     filtroEstoqueStatus,
     filtroTipoContato,
     filtroClassificacao,
+    filtroPivoId,
+    pivos,
   ]);
 
   const exportarCSV = () => {
@@ -384,6 +473,7 @@ export default function RelatoriosPainel({
       financeiro: 'Relatório Financeiro & Recebimentos',
       estoque: 'Relatório de Estoque Atual',
       cadastros: 'Relatório de Cadastros',
+      pivos: 'Relatório de Produtividade dos Pivôs',
     };
     const dataGeracao = new Date().toLocaleString('pt-BR');
 
@@ -531,11 +621,12 @@ export default function RelatoriosPainel({
         </div>
 
         {/* Tipo de Relatório */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-[11px] font-bold">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-[11px] font-bold">
           {[
             { id: 'pedidos', label: '📦 Pedidos' },
             { id: 'financeiro', label: '💰 Financeiro' },
             { id: 'estoque', label: '🏭 Estoque' },
+            { id: 'pivos', label: '🌱 Pivôs' },
             { id: 'cadastros', label: '👥 Cadastros' },
           ].map((item) => (
             <button
@@ -673,6 +764,46 @@ export default function RelatoriosPainel({
                 <option value="esgotado">❌ Esgotado</option>
               </select>
             </div>
+          )}
+
+          {tipoRelatorio === 'pivos' && (
+            <>
+              <div>
+                <label className="text-[10px] text-slate-400 block mb-1">Filtrar Pivô (Individual ou Todos)</label>
+                <select
+                  value={filtroPivoId}
+                  onChange={(e) => setFiltroPivoId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none"
+                >
+                  <option value="todos">🌱 Todos os Pivôs Juntos ({pivos.length})</option>
+                  {pivos.map((pv) => (
+                    <option key={pv.id} value={pv.id}>
+                      {pv.nome} {pv.cultura_atual ? `(${pv.cultura_atual})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-slate-400 block mb-1">Vendas De</label>
+                  <input
+                    type="date"
+                    value={dataInicio}
+                    onChange={(e) => setDataInicio(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 block mb-1">Vendas Até</label>
+                  <input
+                    type="date"
+                    value={dataFim}
+                    onChange={(e) => setDataFim(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 text-white outline-none"
+                  />
+                </div>
+              </div>
+            </>
           )}
 
           {tipoRelatorio === 'cadastros' && (

@@ -8,6 +8,7 @@ import {
   Pedido,
   ItemEstoque,
   ItemVendaPedido,
+  PivoIrrigacao,
   isSupabaseConfigured,
   TipoEntidade,
   StatusCRM,
@@ -23,6 +24,8 @@ import {
   parsePedidosDoBanco,
   salvarEstoqueNoBanco,
   carregarEstoqueDoBanco,
+  salvarPivosNoBanco,
+  carregarPivosDoBanco,
   salvarLembretesEstadoNoBanco,
   carregarLembretesEstadoDoBanco,
   formatarDataBR,
@@ -358,8 +361,22 @@ export default function CabocloAgroCRM() {
   const estoqueQtdRef = useRef<HTMLInputElement>(null);
   const estoquePrecoRef = useRef<HTMLInputElement>(null);
 
-  // Estado do Estoque e Sub-abas de Pedidos
+  // Estado do Estoque, Pivôs e Sub-abas de Pedidos
   const [estoque, setEstoque] = useState<ItemEstoque[]>(isSupabaseConfigured ? [] : DEMO_ESTOQUE);
+  const [pivos, setPivos] = useState<PivoIrrigacao[]>([]);
+  const [isPivosModalOpen, setIsPivosModalOpen] = useState<boolean>(false);
+  const [editingPivoId, setEditingPivoId] = useState<string | null>(null);
+  const [pivoForm, setPivoForm] = useState<{
+    nome: string;
+    area_hectares: string;
+    cultura_atual: string;
+    observacao: string;
+  }>({
+    nome: '',
+    area_hectares: '',
+    cultura_atual: '',
+    observacao: '',
+  });
   const [subAbaPedidos, setSubAbaPedidos] = useState<'pedidos' | 'estoque'>('pedidos');
   const [isNovoPedidoModalOpen, setIsNovoPedidoModalOpen] = useState<boolean>(false);
   const [isNovoItemEstoqueModalOpen, setIsNovoItemEstoqueModalOpen] = useState<boolean>(false);
@@ -403,6 +420,8 @@ export default function CabocloAgroCRM() {
     unidade: string;
     preco: string;
     alerta: string;
+    origemInterna: boolean;
+    pivoId: string;
     observacao: string;
   }>({
     nome: '',
@@ -410,6 +429,8 @@ export default function CabocloAgroCRM() {
     unidade: 'toneladas',
     preco: '',
     alerta: '10',
+    origemInterna: false,
+    pivoId: '',
     observacao: '',
   });
 
@@ -579,6 +600,11 @@ export default function CabocloAgroCRM() {
         try { setEstoque(JSON.parse(salvosEstoque)); } catch (e) {}
       }
 
+      const salvosPivos = localStorage.getItem('caboclo_pivos');
+      if (salvosPivos) {
+        try { setPivos(JSON.parse(salvosPivos)); } catch (e) {}
+      }
+
       const salvosContatos = localStorage.getItem('caboclo_contatos');
       if (salvosContatos) {
         try {
@@ -717,11 +743,13 @@ export default function CabocloAgroCRM() {
         { data: dataContatos, error: errContatos },
         { data: dataPedidos, error: errPedidos },
         estoqueBanco,
+        pivosBanco,
         lembretesBanco,
       ] = await Promise.all([
         supabase.from('contatos').select('*').order('created_at', { ascending: true }),
         supabase.from('pedidos').select('*').order('created_at', { ascending: true }),
         carregarEstoqueDoBanco(),
+        carregarPivosDoBanco(),
         carregarLembretesEstadoDoBanco(),
       ]);
 
@@ -747,6 +775,13 @@ export default function CabocloAgroCRM() {
         setEstoque(estoqueBanco);
         if (typeof window !== 'undefined') {
           localStorage.setItem('caboclo_estoque', JSON.stringify(estoqueBanco));
+        }
+      }
+
+      if (pivosBanco !== null) {
+        setPivos(pivosBanco);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('caboclo_pivos', JSON.stringify(pivosBanco));
         }
       }
 
@@ -1681,6 +1716,8 @@ export default function CabocloAgroCRM() {
       unidade: item.unidade_medida,
       preco: String(item.preco_unitario),
       alerta: String(item.alerta_minimo),
+      origemInterna: Boolean(item.origem_interna || item.pivo_id),
+      pivoId: item.pivo_id || '',
       observacao: item.observacao || '',
     });
     setIsNovoItemEstoqueModalOpen(true);
@@ -1799,6 +1836,10 @@ export default function CabocloAgroCRM() {
 
     try {
       let novaListaEstoque: ItemEstoque[] = [];
+      const pivoSelecionado =
+        novoItemEstoqueForm.origemInterna && novoItemEstoqueForm.pivoId
+          ? pivos.find((pv) => pv.id === novoItemEstoqueForm.pivoId) || null
+          : null;
 
       if (editingEstoqueId) {
         novaListaEstoque = estoque.map((item) =>
@@ -1810,6 +1851,9 @@ export default function CabocloAgroCRM() {
                 unidade_medida: novoItemEstoqueForm.unidade || 'toneladas',
                 preco_unitario: parseFloat(novoItemEstoqueForm.preco) || 0,
                 alerta_minimo: parseFloat(novoItemEstoqueForm.alerta) || 10,
+                origem_interna: novoItemEstoqueForm.origemInterna,
+                pivo_id: pivoSelecionado?.id || null,
+                pivo_nome: pivoSelecionado?.nome || null,
                 observacao: novoItemEstoqueForm.observacao || null,
               }
             : item
@@ -1823,6 +1867,9 @@ export default function CabocloAgroCRM() {
           unidade_medida: novoItemEstoqueForm.unidade || 'toneladas',
           preco_unitario: parseFloat(novoItemEstoqueForm.preco) || 0,
           alerta_minimo: parseFloat(novoItemEstoqueForm.alerta) || 10,
+          origem_interna: novoItemEstoqueForm.origemInterna,
+          pivo_id: pivoSelecionado?.id || null,
+          pivo_nome: pivoSelecionado?.nome || null,
           observacao: novoItemEstoqueForm.observacao || null,
         };
         novaListaEstoque = [novoItem, ...estoque];
@@ -1841,6 +1888,8 @@ export default function CabocloAgroCRM() {
         unidade: 'toneladas',
         preco: '',
         alerta: '10',
+        origemInterna: false,
+        pivoId: '',
         observacao: '',
       });
 
@@ -1851,6 +1900,72 @@ export default function CabocloAgroCRM() {
     } finally {
       salvandoRef.current = false;
       setIsSaving(false);
+    }
+  };
+
+  // Gerenciamento de Pivôs de Irrigação
+  const salvarPivo = async () => {
+    if (!pivoForm.nome.trim() || salvandoRef.current) return;
+
+    salvandoRef.current = true;
+    setIsSaving(true);
+    try {
+      let novaLista: PivoIrrigacao[] = [];
+      if (editingPivoId) {
+        novaLista = pivos.map((p) =>
+          p.id === editingPivoId
+            ? {
+                ...p,
+                nome: pivoForm.nome.trim(),
+                area_hectares: pivoForm.area_hectares.trim() || null,
+                cultura_atual: pivoForm.cultura_atual.trim() || null,
+                observacao: pivoForm.observacao.trim() || null,
+              }
+            : p
+        );
+        setEditingPivoId(null);
+      } else {
+        const novoPivo: PivoIrrigacao = {
+          id: gerarUuid(),
+          nome: pivoForm.nome.trim(),
+          area_hectares: pivoForm.area_hectares.trim() || null,
+          cultura_atual: pivoForm.cultura_atual.trim() || null,
+          observacao: pivoForm.observacao.trim() || null,
+        };
+        novaLista = [novoPivo, ...pivos];
+      }
+
+      setPivos(novaLista);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_pivos', JSON.stringify(novaLista));
+      }
+      setPivoForm({ nome: '', area_hectares: '', cultura_atual: '', observacao: '' });
+
+      const ok = await salvarPivosNoBanco(novaLista);
+      if (!ok) {
+        setErrorMessage('⚠️ Pivô salvo apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+      }
+    } finally {
+      salvandoRef.current = false;
+      setIsSaving(false);
+    }
+  };
+
+  const excluirPivo = async (id: string) => {
+    if (!confirm('Deseja realmente excluir este pivô?')) return;
+    salvandoRef.current = true;
+    try {
+      const novaLista = pivos.filter((p) => p.id !== id);
+      setPivos(novaLista);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('caboclo_pivos', JSON.stringify(novaLista));
+      }
+      const ok = await salvarPivosNoBanco(novaLista);
+      if (!ok) {
+        setErrorMessage('⚠️ Pivô excluído apenas neste dispositivo. Falha ao sincronizar com a nuvem.');
+      }
+    } finally {
+      salvandoRef.current = false;
     }
   };
 
@@ -1995,7 +2110,7 @@ export default function CabocloAgroCRM() {
       msg = `Olá ${nome}, tudo bem? Entro em contato da Caboclo Silagem sobre o seu atendimento. Como podemos te ajudar hoje?`;
     }
 
-    if (lembreteInfo) {
+    if (lembreteInfo && lembreteInfo.tipo !== 'faturamentos') {
       marcarComoRespondido(lembreteInfo.id, nome, lembreteInfo.tipo, lembreteInfo.detalhe);
     }
 
@@ -2137,16 +2252,16 @@ export default function CabocloAgroCRM() {
       isLembreteAtivo(`ped-${p.id}`)
   );
 
-  // 2. LEMBRETES DE FATURAMENTOS (Pagamentos em aberto, atrasados ou com parcelas restantes)
+  // 2. LEMBRETES DE FATURAMENTOS (Só sai quando a fatura for paga)
   const lembretesPagamentoSemana = pedidos.filter(
     (p) =>
       p.status_financeiro !== 'pago' &&
-      isLembreteAtivo(`pag-${p.id}`) &&
       Boolean(
         p.data_vencimento_pagamento ||
           p.qtd_parcelas ||
           p.parcelas_pagas ||
           p.valor_adiantamento ||
+          p.valor_pago_avulso ||
           p.dia_pagamento_parcelas ||
           p.status_financeiro === 'atrasado' ||
           p.status_financeiro === 'pendente'
@@ -2751,9 +2866,9 @@ export default function CabocloAgroCRM() {
                                         produto: p.produto || 'Silagem',
                                         valor_restante: totais.saldoDevedor.toFixed(2),
                                         data_vencimento:
-                                          p.data_vencimento_pagamento ||
-                                          p.dia_pagamento_parcelas ||
-                                          undefined,
+                                          p.data_vencimento_pagamento
+                                            ? formatarDataBR(p.data_vencimento_pagamento)
+                                            : p.dia_pagamento_parcelas || undefined,
                                         info_parcelas:
                                           totais.qtdParcelas > 1
                                             ? `${totais.parcelasRestantes}x restantes de R$ ${totais.valorPorParcela.toFixed(2)}`
@@ -3838,25 +3953,36 @@ export default function CabocloAgroCRM() {
                   Saldo de silagem disponível, preços e alertas de reposição
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  setEditingEstoqueId(null);
-                  setErrosEstoque({});
-                  setAvisoValidacaoEstoque(null);
-                  setNovoItemEstoqueForm({
-                    nome: '',
-                    quantidade: '',
-                    unidade: 'toneladas',
-                    preco: '',
-                    alerta: '10',
-                    observacao: '',
-                  });
-                  setIsNovoItemEstoqueModalOpen(true);
-                }}
-                className="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" /> Novo Produto
-              </button>
+              <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsPivosModalOpen(true)}
+                  className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 transition-all"
+                >
+                  🌱 Pivôs ({pivos.length})
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingEstoqueId(null);
+                    setErrosEstoque({});
+                    setAvisoValidacaoEstoque(null);
+                    setNovoItemEstoqueForm({
+                      nome: '',
+                      quantidade: '',
+                      unidade: 'toneladas',
+                      preco: '',
+                      alerta: '10',
+                      origemInterna: false,
+                      pivoId: '',
+                      observacao: '',
+                    });
+                    setIsNovoItemEstoqueModalOpen(true);
+                  }}
+                  className="bg-sky-600 hover:bg-sky-500 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shadow transition-all"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Novo Produto
+                </button>
+              </div>
             </div>
 
             <div className="space-y-3">
@@ -3905,6 +4031,11 @@ export default function CabocloAgroCRM() {
                           <span className="text-xs text-slate-400 font-mono">
                             Preço Unitário: R$ {item.preco_unitario.toFixed(2)} / {item.unidade_medida}
                           </span>
+                          {(item.origem_interna || item.pivo_nome) && (
+                            <span className="mt-1 inline-flex items-center gap-1 bg-emerald-950/70 text-emerald-300 border border-emerald-700/60 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                              🌱 Produto Interno {item.pivo_nome ? `• ${item.pivo_nome}` : ''}
+                            </span>
+                          )}
                         </div>
 
                         <span
@@ -4331,6 +4462,7 @@ export default function CabocloAgroCRM() {
                 pedidos={pedidos}
                 contatos={contatos}
                 estoque={estoque}
+                pivos={pivos}
               />
             )}
           </div>
@@ -5447,6 +5579,78 @@ export default function CabocloAgroCRM() {
                 </div>
               </div>
 
+              {/* ORIGEM DO PRODUTO: INTERNO (PIVÔ) OU EXTERNO */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2.5">
+                <label className="text-[11px] text-slate-200 font-bold block">
+                  🌱 É um produto interno (produzido na fazenda)?
+                </label>
+                <div className="grid grid-cols-2 gap-1.5 text-xs">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setNovoItemEstoqueForm({ ...novoItemEstoqueForm, origemInterna: true })
+                    }
+                    className={`py-2 px-2 rounded-lg font-bold border transition-all ${
+                      novoItemEstoqueForm.origemInterna
+                        ? 'bg-emerald-600 text-white border-emerald-400 shadow'
+                        : 'bg-slate-900 text-slate-400 border-slate-800'
+                    }`}
+                  >
+                    ✅ Sim (Produto Interno)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setNovoItemEstoqueForm({
+                        ...novoItemEstoqueForm,
+                        origemInterna: false,
+                        pivoId: '',
+                      })
+                    }
+                    className={`py-2 px-2 rounded-lg font-bold border transition-all ${
+                      !novoItemEstoqueForm.origemInterna
+                        ? 'bg-sky-600 text-white border-sky-400 shadow'
+                        : 'bg-slate-900 text-slate-400 border-slate-800'
+                    }`}
+                  >
+                    🏢 Não (Comprado)
+                  </button>
+                </div>
+
+                {novoItemEstoqueForm.origemInterna && (
+                  <div className="pt-1 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] text-emerald-300 font-semibold">
+                        De qual Pivô veio a mercadoria?
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsPivosModalOpen(true)}
+                        className="text-[10px] text-amber-300 hover:underline font-bold"
+                      >
+                        + Cadastrar Pivô
+                      </button>
+                    </div>
+                    <select
+                      value={novoItemEstoqueForm.pivoId}
+                      onChange={(e) =>
+                        setNovoItemEstoqueForm({ ...novoItemEstoqueForm, pivoId: e.target.value })
+                      }
+                      className="w-full bg-slate-900 border border-emerald-500/40 rounded-lg p-2 text-white outline-none text-xs"
+                    >
+                      <option value="">-- Selecione o Pivô --</option>
+                      {pivos.map((pv) => (
+                        <option key={pv.id} value={pv.id}>
+                          🌱 {pv.nome}
+                          {pv.cultura_atual ? ` (${pv.cultura_atual})` : ''}
+                          {pv.area_hectares ? ` • ${pv.area_hectares}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label className="text-[11px] text-slate-300 font-semibold block mb-1">
                   Observações do Estoque (Opcional)
@@ -5579,6 +5783,153 @@ export default function CabocloAgroCRM() {
               >
                 <Check className="w-4 h-4" /> {isSaving ? 'Salvando...' : 'Confirmar Entrada'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL GERENCIAR PIVÔS */}
+      {isPivosModalOpen && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-md w-full max-h-[90dvh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3 shrink-0">
+              <h3 className="font-bold text-emerald-300 text-sm flex items-center gap-1.5">
+                🌱 Pivôs da Fazenda ({pivos.length})
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPivosModalOpen(false);
+                  setEditingPivoId(null);
+                  setPivoForm({ nome: '', area_hectares: '', cultura_atual: '', observacao: '' });
+                }}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2.5">
+                <span className="text-[11px] font-bold text-emerald-400 block">
+                  {editingPivoId ? 'Editar Pivô' : '+ Cadastrar Novo Pivô'}
+                </span>
+                <div>
+                  <label className="text-[10px] text-slate-400 block mb-1">Nome do Pivô *</label>
+                  <input
+                    type="text"
+                    value={pivoForm.nome}
+                    onChange={(e) => setPivoForm({ ...pivoForm, nome: e.target.value })}
+                    placeholder="Ex: Pivô 01 - Sede"
+                    className="w-full bg-slate-900 border border-slate-700 focus:border-emerald-500 rounded-lg p-2 text-white outline-none"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">Área (Hectares)</label>
+                    <input
+                      type="text"
+                      value={pivoForm.area_hectares}
+                      onChange={(e) => setPivoForm({ ...pivoForm, area_hectares: e.target.value })}
+                      placeholder="Ex: 45 ha"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">Cultura Atual</label>
+                    <input
+                      type="text"
+                      value={pivoForm.cultura_atual}
+                      onChange={(e) => setPivoForm({ ...pivoForm, cultura_atual: e.target.value })}
+                      placeholder="Ex: Milho Safra"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 block mb-1">Observação</label>
+                  <input
+                    type="text"
+                    value={pivoForm.observacao}
+                    onChange={(e) => setPivoForm({ ...pivoForm, observacao: e.target.value })}
+                    placeholder="Notas sobre o pivô..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-white outline-none"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  {editingPivoId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingPivoId(null);
+                        setPivoForm({ nome: '', area_hectares: '', cultura_atual: '', observacao: '' });
+                      }}
+                      className="bg-slate-800 text-slate-300 px-3 py-2 rounded-lg font-semibold"
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={salvarPivo}
+                    disabled={!pivoForm.nome.trim() || isSaving}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white py-2 rounded-lg font-bold"
+                  >
+                    {editingPivoId ? 'Salvar Alteração' : 'Adicionar Pivô'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {pivos.length === 0 ? (
+                  <p className="text-center text-slate-500 py-4">Nenhum pivô cadastrado ainda.</p>
+                ) : (
+                  pivos.map((pv) => (
+                    <div
+                      key={pv.id}
+                      className="bg-slate-950 border border-slate-800 rounded-xl p-3 flex items-start justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-bold text-white block">{pv.nome}</span>
+                        <span className="text-[11px] text-emerald-300 block">
+                          {[pv.area_hectares, pv.cultura_atual].filter(Boolean).join(' • ') || 'Sem detalhes'}
+                        </span>
+                        {pv.observacao && (
+                          <span className="text-[10px] text-slate-400 italic block mt-0.5">
+                            {pv.observacao}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPivoId(pv.id);
+                            setPivoForm({
+                              nome: pv.nome,
+                              area_hectares: pv.area_hectares || '',
+                              cultura_atual: pv.cultura_atual || '',
+                              observacao: pv.observacao || '',
+                            });
+                          }}
+                          className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300"
+                          title="Editar pivô"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => excluirPivo(pv.id)}
+                          className="p-1.5 rounded bg-slate-800 hover:bg-red-950 text-red-400"
+                          title="Excluir pivô"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>

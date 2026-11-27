@@ -37,6 +37,7 @@ import {
   ExternalLink,
   Eye,
   User,
+  Printer,
 } from 'lucide-react';
 
 interface FluxoPedidosCarregamentoProps {
@@ -151,7 +152,7 @@ export function FluxoPedidosCarregamento({
   onDispararWhatsApp,
   modoInicial = 'pedidos',
 }: FluxoPedidosCarregamentoProps) {
-  const [subVisao, setSubVisao] = useState<'pedidos' | 'funcionarios'>(modoInicial);
+  const [subVisao, setSubVisao] = useState<'pedidos' | 'funcionarios' | 'historico'>(modoInicial);
   const [filtroEtapa, setFiltroEtapa] = useState<'todos' | EtapaPedido>('todos');
   const [filtroPatioStatus, setFiltroPatioStatus] = useState<'pendentes' | 'carregados' | 'todos'>('pendentes');
   const [linkCopiado, setLinkCopiado] = useState<boolean>(false);
@@ -245,6 +246,196 @@ export function FluxoPedidosCarregamento({
     navigator.clipboard.writeText(url);
     setLinkCopiado(true);
     setTimeout(() => setLinkCopiado(false), 3000);
+  };
+
+  const imprimirPedido = (pedido: Pedido) => {
+    const clienteObj = contatos.find(
+      (c) => c.id === pedido.contato_id || c.nome === pedido.nome_cliente
+    );
+    const motoristaObj = terceiros.find((t) => t.id === pedido.terceiro_id);
+    const totais = calcularTotaisPedido(pedido);
+    const esc = (v: string | number | null | undefined) =>
+      String(v == null ? '' : v)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+
+    const etapaLabel =
+      pedido.etapa_pedido === 'carregado'
+        ? pedido.entrega_confirmada
+          ? 'Finalizado e Entregue'
+          : '4. Pedido Final Carregado'
+        : pedido.etapa_pedido === 'agendado'
+        ? '3. Carga Agendada'
+        : pedido.etapa_pedido === 'aguardando_cliente'
+        ? '2. Aguardando Cliente'
+        : '1. Pré-Pedido';
+
+    const itensHtml =
+      pedido.itens_venda && pedido.itens_venda.length > 0
+        ? pedido.itens_venda
+            .map(
+              (it) =>
+                `<tr><td>${esc(it.nome_produto)}</td><td>${esc(it.quantidade)} ${esc(
+                  it.unidade_medida
+                )}</td><td>R$ ${Number(it.preco_unitario || 0).toFixed(2)}</td><td>R$ ${Number(
+                  it.subtotal || 0
+                ).toFixed(2)}</td></tr>`
+            )
+            .join('')
+        : `<tr><td>${esc(pedido.produto || 'Silagem')}</td><td>${esc(
+            pedido.quantidade || `${totais.toneladasFinal} t`
+          )}</td><td>-</td><td>R$ ${totais.valorBase.toFixed(2)}</td></tr>`;
+
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Pedido - ${esc(pedido.nome_cliente)}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 20px; font-size: 12px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #059669; padding-bottom: 10px; margin-bottom: 14px; }
+    .header h1 { margin: 0; font-size: 18px; color: #064e3b; }
+    .header p { margin: 2px 0 0; font-size: 11px; color: #475569; }
+    .meta { text-align: right; font-size: 11px; color: #475569; }
+    .box { border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; margin-bottom: 12px; }
+    .box h2 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; color: #064e3b; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
+    th { background: #f1f5f9; font-size: 11px; text-transform: uppercase; }
+    .totais { margin-top: 8px; text-align: right; font-size: 12px; line-height: 1.6; }
+    .totais .destaque { font-size: 15px; font-weight: bold; color: #064e3b; }
+    .assinatura { margin-top: 34px; display: grid; grid-template-columns: 1fr 1fr; gap: 30px; text-align: center; }
+    .linha { border-top: 1px solid #475569; padding-top: 4px; font-size: 11px; color: #475569; }
+    @media print { body { margin: 12mm; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>Caboclo Agro CRM</h1>
+      <p>Comprovante / Ordem de Pedido</p>
+    </div>
+    <div class="meta">
+      <div><strong>Data do Pedido:</strong> ${esc(formatarDataBR(pedido.data_compra))}</div>
+      <div><strong>Etapa:</strong> ${esc(etapaLabel)}</div>
+      <div><strong>Impresso em:</strong> ${esc(new Date().toLocaleString('pt-BR'))}</div>
+    </div>
+  </div>
+
+  <div class="box">
+    <h2>Dados do Cliente</h2>
+    <div class="grid">
+      <div><strong>Cliente:</strong> ${esc(pedido.nome_cliente)}</div>
+      <div><strong>Telefone:</strong> ${esc(clienteObj?.telefone || '-')}</div>
+      <div style="grid-column: span 2;"><strong>Endereço / Fazenda:</strong> ${esc(
+        clienteObj?.endereco_fazenda || '-'
+      )}</div>
+    </div>
+  </div>
+
+  <div class="box">
+    <h2>Produtos do Pedido</h2>
+    <table>
+      <thead>
+        <tr><th>Produto</th><th>Quantidade</th><th>Preço Unit.</th><th>Subtotal</th></tr>
+      </thead>
+      <tbody>${itensHtml}</tbody>
+    </table>
+    <div class="totais">
+      <div>Valor dos Produtos: <strong>R$ ${totais.valorBase.toFixed(2)}</strong></div>
+      ${
+        pedido.tem_frete !== false
+          ? `<div>Frete (${esc(motoristaObj?.nome || 'Terceiro')}): <strong>R$ ${totais.freteCliente.toFixed(
+              2
+            )}</strong></div>`
+          : ''
+      }
+      ${
+        totais.extrasCliente > 0
+          ? `<div>Custos Extras Repassados: <strong>R$ ${totais.extrasCliente.toFixed(2)}</strong></div>`
+          : ''
+      }
+      <div class="destaque">Total do Pedido: R$ ${totais.valorFinalCliente.toFixed(2)}</div>
+      ${
+        totais.valorPagoAvulso > 0
+          ? `<div>Pago Avulso: R$ ${totais.valorPagoAvulso.toFixed(2)}</div>`
+          : ''
+      }
+      <div>Status Financeiro: <strong>${
+        pedido.status_financeiro === 'pago'
+          ? 'PAGO'
+          : `EM ABERTO (Restante: R$ ${totais.saldoDevedor.toFixed(2)})`
+      }</strong></div>
+    </div>
+  </div>
+
+  <div class="box">
+    <h2>Logística & Entrega</h2>
+    <div class="grid">
+      <div><strong>Motorista / Terceiro:</strong> ${esc(motoristaObj?.nome || 'Retirada / A definir')}</div>
+      <div><strong>Responsável Pátio:</strong> ${esc(pedido.nome_funcionario || '-')}</div>
+      <div><strong>Data de Carregamento:</strong> ${esc(formatarDataBR(pedido.data_carregamento, 'A definir'))}</div>
+      <div><strong>Data de Entrega:</strong> ${esc(formatarDataBR(pedido.data_entrega, 'A definir'))}</div>
+      ${
+        pedido.toneladas_real != null
+          ? `<div><strong>Peso Real:</strong> ${esc(pedido.toneladas_real)} t${
+              pedido.sacos_real ? ` (${esc(pedido.sacos_real)} sacos)` : ''
+            }</div>`
+          : ''
+      }
+      ${
+        pedido.entrega_confirmada && pedido.data_confirmacao_entrega
+          ? `<div><strong>Finalizado em:</strong> ${esc(
+              formatarDataHoraBR(pedido.data_confirmacao_entrega)
+            )}</div>`
+          : ''
+      }
+    </div>
+    ${
+      pedido.observacao
+        ? `<div style="margin-top:8px;"><strong>Observações:</strong> ${esc(pedido.observacao)}</div>`
+        : ''
+    }
+  </div>
+
+  <div class="assinatura">
+    <div class="linha">Assinatura Caboclo Silagem</div>
+    <div class="linha">Assinatura do Cliente / Recebedor</div>
+  </div>
+</body>
+</html>`;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow?.document;
+    if (!doc) {
+      document.body.removeChild(iframe);
+      return;
+    }
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    setTimeout(() => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      setTimeout(() => {
+        if (document.body.contains(iframe)) {
+          document.body.removeChild(iframe);
+        }
+      }, 1500);
+    }, 250);
   };
 
   const adicionarCustoExtra = (descricaoPadrao: string = '') => {
@@ -353,14 +544,29 @@ export function FluxoPedidosCarregamento({
     setModalCargaPedido(null);
   };
 
-  // Pedidos filtrados para a visão principal
+  const isPedidoTodoFinalizado = (p: Pedido) =>
+    (p.etapa_pedido || 'pre_pedido') === 'carregado' &&
+    Boolean(p.entrega_confirmada) &&
+    p.status_financeiro === 'pago';
+
+  const pedidosAtivos = useMemo(
+    () => pedidos.filter((p) => !isPedidoTodoFinalizado(p)),
+    [pedidos]
+  );
+
+  const pedidosHistorico = useMemo(
+    () => pedidos.filter((p) => isPedidoTodoFinalizado(p)),
+    [pedidos]
+  );
+
+  // Pedidos filtrados para a visão principal (apenas ativos — quitados+entregues vão para o Histórico)
   const pedidosFiltrados = useMemo(() => {
-    return pedidos.filter((p) => {
+    return pedidosAtivos.filter((p) => {
       const etapa: EtapaPedido = p.etapa_pedido || 'pre_pedido';
       if (filtroEtapa === 'todos') return true;
       return etapa === filtroEtapa;
     });
-  }, [pedidos, filtroEtapa]);
+  }, [pedidosAtivos, filtroEtapa]);
 
   const qtdCargasPendentes = useMemo(
     () =>
@@ -393,37 +599,50 @@ export function FluxoPedidosCarregamento({
 
   return (
     <div className="space-y-4">
-      {/* Seletor Superior: Fluxo Comercial de Pedidos vs. Tela de Funcionários (Pátio / Carregamento) */}
-      <div className="flex items-center justify-between gap-2 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
+      {/* Seletor Superior: Fluxo Comercial de Pedidos vs. Tela de Funcionários vs. Histórico */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 bg-slate-900 p-1.5 rounded-2xl border border-slate-800">
         <button
           type="button"
           onClick={() => setSubVisao('pedidos')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+          className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
             subVisao === 'pedidos'
               ? 'bg-emerald-600 text-white shadow'
               : 'text-slate-400 hover:text-slate-200'
           }`}
         >
-          <ShoppingBag className="w-4 h-4" />
-          <span>Fluxo de Pedidos ({pedidos.length})</span>
+          <ShoppingBag className="w-4 h-4 shrink-0" />
+          <span>Fluxo de Pedidos ({pedidosAtivos.length})</span>
         </button>
 
         <button
           type="button"
           onClick={() => setSubVisao('funcionarios')}
-          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all relative ${
+          className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all relative ${
             subVisao === 'funcionarios'
               ? 'bg-amber-500 text-slate-950 shadow'
               : 'text-slate-300 hover:text-white'
           }`}
         >
-          <ClipboardCheck className="w-4 h-4" />
+          <ClipboardCheck className="w-4 h-4 shrink-0" />
           <span>👨‍🌾 Pátio / Funcionários</span>
           {qtdCargasPendentes > 0 && (
             <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-extrabold">
               {qtdCargasPendentes}
             </span>
           )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubVisao('historico')}
+          className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+            subVisao === 'historico'
+              ? 'bg-sky-600 text-white shadow'
+              : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          <span>📚 Histórico ({pedidosHistorico.length})</span>
         </button>
       </div>
 
@@ -472,7 +691,7 @@ export function FluxoPedidosCarregamento({
                     : 'bg-slate-800 text-slate-200'
                 }`}
               >
-                {pedidos.length}
+                {pedidosAtivos.length}
               </span>
             </button>
 
@@ -484,7 +703,7 @@ export function FluxoPedidosCarregamento({
                   titulo: 'Pré-Pedido / Frete',
                   sub: 'Cotar caminhoneiro',
                   icone: <Truck className="w-4 h-4 text-purple-400 shrink-0" />,
-                  qtd: pedidos.filter((p) => (p.etapa_pedido || 'pre_pedido') === 'pre_pedido').length,
+                  qtd: pedidosAtivos.filter((p) => (p.etapa_pedido || 'pre_pedido') === 'pre_pedido').length,
                   corAtiva: 'bg-purple-950/90 border-purple-400 text-white ring-1 ring-purple-400/50',
                   corBadge: 'bg-purple-500 text-slate-950',
                 },
@@ -494,7 +713,7 @@ export function FluxoPedidosCarregamento({
                   titulo: 'Confirmar Cliente',
                   sub: 'Aprovar valor final',
                   icone: <Users className="w-4 h-4 text-amber-400 shrink-0" />,
-                  qtd: pedidos.filter((p) => p.etapa_pedido === 'aguardando_cliente').length,
+                  qtd: pedidosAtivos.filter((p) => p.etapa_pedido === 'aguardando_cliente').length,
                   corAtiva: 'bg-amber-950/90 border-amber-400 text-white ring-1 ring-amber-400/50',
                   corBadge: 'bg-amber-400 text-slate-950',
                 },
@@ -504,7 +723,7 @@ export function FluxoPedidosCarregamento({
                   titulo: 'Agendados / Pátio',
                   sub: 'Datas e avisos',
                   icone: <Calendar className="w-4 h-4 text-sky-400 shrink-0" />,
-                  qtd: pedidos.filter((p) => p.etapa_pedido === 'agendado').length,
+                  qtd: pedidosAtivos.filter((p) => p.etapa_pedido === 'agendado').length,
                   corAtiva: 'bg-sky-950/90 border-sky-400 text-white ring-1 ring-sky-400/50',
                   corBadge: 'bg-sky-400 text-slate-950',
                 },
@@ -514,7 +733,7 @@ export function FluxoPedidosCarregamento({
                   titulo: 'Carregados / Finais',
                   sub: 'Peso real e pagamento',
                   icone: <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />,
-                  qtd: pedidos.filter((p) => p.etapa_pedido === 'carregado').length,
+                  qtd: pedidosAtivos.filter((p) => p.etapa_pedido === 'carregado').length,
                   corAtiva: 'bg-emerald-950/90 border-emerald-400 text-white ring-1 ring-emerald-400/50',
                   corBadge: 'bg-emerald-400 text-slate-950',
                 },
@@ -651,6 +870,14 @@ export function FluxoPedidosCarregamento({
                     </div>
 
                     <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => imprimirPedido(pedido)}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 transition-colors"
+                        title="Imprimir pedido"
+                      >
+                        <Printer className="w-3.5 h-3.5" />
+                      </button>
                       <button
                         type="button"
                         onClick={() => onEditarPedido(pedido)}
@@ -2012,6 +2239,106 @@ export function FluxoPedidosCarregamento({
                           : '📸 Confirmar Carga c/ Foto do Caminhão Carregado'}
                       </span>
                     </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* VISÃO 3: HISTÓRICO DE PEDIDOS FINALIZADOS (QUITADOS E ENTREGUES) */}
+      {/* ===================================================================== */}
+      {subVisao === 'historico' && (
+        <div className="space-y-3">
+          <div className="bg-slate-900 border border-sky-500/30 rounded-2xl p-4">
+            <h3 className="text-xs font-extrabold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 shrink-0" /> Histórico de Pedidos Finalizados ({pedidosHistorico.length})
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Pedidos que já foram carregados, entregues e totalmente quitados. Você pode editar ou reabrir qualquer pedido quando precisar.
+            </p>
+          </div>
+
+          {pedidosHistorico.length === 0 ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-xs text-slate-400">
+              Nenhum pedido totalmente finalizado no histórico ainda.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {pedidosHistorico.map((p) => {
+                const totais = calcularTotaisPedido(p);
+                return (
+                  <div
+                    key={p.id}
+                    className="bg-slate-900 border border-emerald-700/40 rounded-2xl p-4 space-y-2.5 shadow-md"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-white text-sm">{p.nome_cliente}</span>
+                          <span className="px-2 py-0.5 rounded text-[9px] font-extrabold uppercase bg-emerald-950 text-emerald-300 border border-emerald-700">
+                            🏁 Quitado & Entregue
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-slate-300 block mt-0.5">
+                          {p.produto || 'Silagem'} • {p.quantidade || `${totais.toneladasFinal}t`}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
+                          Pedido: {formatarDataBR(p.data_compra)}
+                          {p.data_confirmacao_entrega
+                            ? ` • Entregue em: ${formatarDataHoraBR(p.data_confirmacao_entrega)}`
+                            : ''}
+                        </span>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-[10px] text-slate-400 block">Total Recebido</span>
+                        <span className="text-sm font-extrabold text-emerald-400 font-mono">
+                          R$ {totais.valorFinalCliente.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => imprimirPedido(p)}
+                        className="bg-slate-800 hover:bg-slate-700 text-sky-300 border border-slate-700 px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all"
+                      >
+                        <Printer className="w-3.5 h-3.5" /> Imprimir
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onEditarPedido(p)}
+                        className="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" /> Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onAtualizarPedido({
+                            ...p,
+                            entrega_confirmada: false,
+                            data_confirmacao_entrega: null,
+                          });
+                          setSubVisao('pedidos');
+                        }}
+                        className="bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/40 px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-all"
+                      >
+                        ↩️ Reabrir Pedido
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => p.id && onExcluirPedido(p.id)}
+                        className="bg-slate-800 hover:bg-red-950 text-red-400 border border-slate-700 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 ml-auto transition-all"
+                        title="Excluir pedido"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}

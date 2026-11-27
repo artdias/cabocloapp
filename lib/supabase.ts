@@ -76,6 +76,7 @@ export interface ItemEstoque {
   unidade_medida: string; // Ex: 'toneladas', 'sacos', 'kg', 'unidade'
   preco_unitario: number; // Ex: 450.00
   alerta_minimo: number; // Ex: 20
+  origem_interna?: boolean | null;
   pivo_id?: string | null;
   pivo_nome?: string | null;
   observacao?: string | null;
