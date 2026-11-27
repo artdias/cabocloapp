@@ -15,6 +15,8 @@ import {
   carregarEstoqueDoBanco,
   salvarEstoqueNoBanco,
   comprimirFotoCaminhao,
+  formatarDataBR,
+  formatarDataHoraBR,
 } from '@/lib/supabase';
 import {
   Truck,
@@ -499,11 +501,11 @@ export default function TelaExclusivaPatioFuncionarios() {
 
                     <div className="text-right text-[10px] font-mono text-slate-300">
                       <span className="block text-amber-300 font-bold">
-                        📅 Carregar: {p.data_carregamento || p.data_compra}
+                        📅 Carregar: {formatarDataBR(p.data_carregamento || p.data_compra)}
                       </span>
                       {p.data_entrega && (
                         <span className="block text-sky-300">
-                          📍 Entrega: {p.data_entrega}
+                          📍 Entrega: {formatarDataBR(p.data_entrega)}
                         </span>
                       )}
                     </div>

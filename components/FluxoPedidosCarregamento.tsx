@@ -9,6 +9,8 @@ import {
   CustoExtraPedido,
   StatusFinanceiro,
   comprimirFotoCaminhao,
+  formatarDataBR,
+  formatarDataHoraBR,
 } from '@/lib/supabase';
 import {
   ShoppingBag,
@@ -96,10 +98,11 @@ export function calcularTotaisPedido(pedido: Pedido) {
   const parcelasRestantes = Math.max(0, qtdParcelas - parcelasPagas);
 
   const valorPagoParcelas = parcelasPagas * valorPorParcela;
+  const valorPagoAvulso = Number(pedido.valor_pago_avulso || 0);
   const valorTotalPago =
     pedido.status_financeiro === 'pago'
       ? valorFinalCliente
-      : Math.min(valorFinalCliente, adiantamento + valorPagoParcelas);
+      : Math.min(valorFinalCliente, adiantamento + valorPagoParcelas + valorPagoAvulso);
   const saldoDevedor =
     pedido.status_financeiro === 'pago'
       ? 0
@@ -115,6 +118,7 @@ export function calcularTotaisPedido(pedido: Pedido) {
     valorFinalCliente,
     custoInternoTotal,
     lucroLiquido,
+    valorPagoAvulso,
     // Aliases usados nos relatórios financeiros
     totalCobradoCliente: valorFinalCliente,
     totalCustosInternos: custoInternoTotal,
@@ -151,6 +155,8 @@ export function FluxoPedidosCarregamento({
   const [filtroEtapa, setFiltroEtapa] = useState<'todos' | EtapaPedido>('todos');
   const [filtroPatioStatus, setFiltroPatioStatus] = useState<'pendentes' | 'carregados' | 'todos'>('pendentes');
   const [linkCopiado, setLinkCopiado] = useState<boolean>(false);
+  const [pagtoAvulsoAbertoId, setPagtoAvulsoAbertoId] = useState<string | null>(null);
+  const [pagtoAvulsoValor, setPagtoAvulsoValor] = useState<string>('');
   const [processandoFotoCarga, setProcessandoFotoCarga] = useState<boolean>(false);
   const [fotoAmpliadaModal, setFotoAmpliadaModal] = useState<{
     url: string;
@@ -640,7 +646,7 @@ export function FluxoPedidosCarregamento({
                         </button>
                       </div>
                       <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
-                        Criado em: {pedido.data_compra}
+                        Criado em: {formatarDataBR(pedido.data_compra)}
                       </span>
                     </div>
 
@@ -781,7 +787,7 @@ export function FluxoPedidosCarregamento({
                         )}
                         {pedido.data_vencimento_pagamento && (
                           <span className={isPagAtrasado ? 'text-red-400 font-bold' : 'text-amber-300'}>
-                            📅 Vencimento: {pedido.data_vencimento_pagamento}
+                            📅 Vencimento: {formatarDataBR(pedido.data_vencimento_pagamento)}
                           </span>
                         )}
                         {pedido.dia_pagamento_parcelas && (
@@ -1344,7 +1350,7 @@ export function FluxoPedidosCarregamento({
                               </span>
                               {pedido.data_confirmacao_carga && (
                                 <span className="text-[10px] text-slate-400 block">
-                                  {pedido.data_confirmacao_carga}
+                                  {formatarDataHoraBR(pedido.data_confirmacao_carga)}
                                 </span>
                               )}
                             </div>
@@ -1567,22 +1573,138 @@ export function FluxoPedidosCarregamento({
                                 </span>
                               </button>
 
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onAtualizarPedido({
+                                      ...pedido,
+                                      qtd_parcelas: 2,
+                                      parcelas_pagas: 1,
+                                      status_financeiro: 'pendente',
+                                    })
+                                  }
+                                  className="bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-700/70 py-2 px-2.5 rounded-xl font-bold text-[11px] flex items-center justify-center gap-1 transition-all active:scale-95"
+                                >
+                                  <span>💳 Parcelar: Confirmar 1ª e Deixar Resto Aberto</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                        {/* PAGAMENTO AVULSO (DESCONTAR VALOR PAGO PARCIALMENTE DO TOTAL) */}
+                        {pedido.status_financeiro !== 'pago' && (
+                          <div className="pt-1.5 border-t border-slate-800/80 space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              {totais.valorPagoAvulso > 0 ? (
+                                <span className="text-[10px] text-emerald-300 font-semibold">
+                                  💵 Já descontado avulso: R$ {totais.valorPagoAvulso.toFixed(2)}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-400">
+                                  Cliente pagou algum valor avulso?
+                                </span>
+                              )}
+
                               <button
                                 type="button"
-                                onClick={() =>
-                                  onAtualizarPedido({
-                                    ...pedido,
-                                    qtd_parcelas: 2,
-                                    parcelas_pagas: 1,
-                                    status_financeiro: 'pendente',
-                                  })
-                                }
-                                className="bg-sky-950 hover:bg-sky-900 text-sky-300 border border-sky-700/70 py-2 px-2.5 rounded-xl font-bold text-[11px] flex items-center justify-center gap-1 transition-all active:scale-95"
+                                onClick={() => {
+                                  const idAtual = pedido.id || '';
+                                  if (pagtoAvulsoAbertoId === idAtual) {
+                                    setPagtoAvulsoAbertoId(null);
+                                    setPagtoAvulsoValor('');
+                                  } else {
+                                    setPagtoAvulsoAbertoId(idAtual);
+                                    setPagtoAvulsoValor('');
+                                  }
+                                }}
+                                className="bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/40 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all"
                               >
-                                <span>💳 Parcelar: Confirmar 1ª e Deixar Resto Aberto</span>
+                                {pagtoAvulsoAbertoId === (pedido.id || '')
+                                  ? 'Fechar'
+                                  : '💵 Registrar Pagto Avulso'}
                               </button>
                             </div>
+
+                            {pagtoAvulsoAbertoId === (pedido.id || '') && (
+                              <div className="flex flex-col sm:flex-row gap-1.5 bg-slate-900/90 p-2 rounded-xl border border-amber-500/30">
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="Valor pago avulso (Ex: 300.00)"
+                                  value={pagtoAvulsoValor}
+                                  onChange={(e) => setPagtoAvulsoValor(e.target.value)}
+                                  className="flex-1 bg-slate-950 border border-slate-700 focus:border-amber-500 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const val = parseFloat(pagtoAvulsoValor.replace(',', '.'));
+                                    if (isNaN(val) || val <= 0) return;
+                                    const novoAvulso = Math.round((totais.valorPagoAvulso + val) * 100) / 100;
+                                    const novoSaldo = Math.max(0, totais.saldoDevedor - val);
+                                    onAtualizarPedido({
+                                      ...pedido,
+                                      valor_pago_avulso: novoAvulso,
+                                      status_financeiro: novoSaldo <= 0.01 ? 'pago' : pedido.status_financeiro,
+                                    });
+                                    setPagtoAvulsoAbertoId(null);
+                                    setPagtoAvulsoValor('');
+                                  }}
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold shrink-0 transition-all active:scale-95"
+                                >
+                                  ✓ Descontar do Total
+                                </button>
+                              </div>
+                            )}
                           </div>
+                        )}
+                      </div>
+
+                      {/* CONFIRMAÇÃO DE ENTREGA E FINALIZAÇÃO DO PEDIDO */}
+                      <div className="pt-1">
+                        {pedido.entrega_confirmada ? (
+                          <div className="bg-emerald-950/60 border border-emerald-600/60 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <span className="text-xs font-extrabold text-emerald-300 flex items-center gap-1.5">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                                Entrega Confirmada • Pedido Finalizado
+                              </span>
+                              {pedido.data_confirmacao_entrega && (
+                                <span className="text-[10px] text-emerald-200/80 block mt-0.5">
+                                  Finalizado em: {formatarDataHoraBR(pedido.data_confirmacao_entrega)}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onAtualizarPedido({
+                                  ...pedido,
+                                  entrega_confirmada: false,
+                                  data_confirmacao_entrega: null,
+                                })
+                              }
+                              className="bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 px-2.5 py-1 rounded-lg text-[10px] font-semibold"
+                            >
+                              Desfazer
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onAtualizarPedido({
+                                ...pedido,
+                                entrega_confirmada: true,
+                                data_confirmacao_entrega: new Date().toISOString(),
+                              })
+                            }
+                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 px-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95"
+                          >
+                            <Truck className="w-4 h-4 shrink-0" />
+                            <span>Confirmar Entrega e Finalizar Pedido</span>
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1764,7 +1886,7 @@ export function FluxoPedidosCarregamento({
                               ? '✅ JÁ CARREGADO'
                               : isHoje
                               ? '🔥 CARREGAR HOJE'
-                              : `⏳ PENDENTE • ${p.data_carregamento || 'A definir'}`}
+                              : `⏳ PENDENTE • ${formatarDataBR(p.data_carregamento, 'A definir')}`}
                           </span>
                           {p.nome_funcionario && (
                             <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-semibold">
@@ -1775,8 +1897,8 @@ export function FluxoPedidosCarregamento({
                       </div>
 
                       <div className="text-right text-[11px] font-mono text-slate-400">
-                        <div>Carga: {p.data_carregamento || p.data_compra}</div>
-                        {p.data_entrega && <div>Entrega: {p.data_entrega}</div>}
+                        <div>Carga: {formatarDataBR(p.data_carregamento || p.data_compra)}</div>
+                        {p.data_entrega && <div>Entrega: {formatarDataBR(p.data_entrega)}</div>}
                       </div>
                     </div>
 

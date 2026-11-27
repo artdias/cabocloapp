@@ -106,6 +106,7 @@ export interface Pedido {
   qtd_parcelas?: number | null;
   parcelas_pagas?: number | null;
   valor_adiantamento?: number | null;
+  valor_pago_avulso?: number | null;
   dia_pagamento_parcelas?: string | null;
   // Fluxo Operacional: Pré-Pedido -> Frete -> Cliente -> Agendamento/Funcionário -> Carregamento Real
   etapa_pedido?: EtapaPedido | null;
@@ -123,6 +124,8 @@ export interface Pedido {
   estoque_baixado?: boolean | null;
   foto_caminhao_carregado?: string | null;
   data_confirmacao_carga?: string | null;
+  entrega_confirmada?: boolean | null;
+  data_confirmacao_entrega?: string | null;
   status_financeiro: StatusFinanceiro;
   tipo_operacao: 'venda' | 'compra';
   observacao?: string | null;
@@ -371,6 +374,7 @@ export async function salvarPedidoNoBanco(pedido: Pedido): Promise<boolean> {
     qtd_parcelas: pedido.qtd_parcelas ?? null,
     parcelas_pagas: pedido.parcelas_pagas ?? null,
     valor_adiantamento: pedido.valor_adiantamento ?? null,
+    valor_pago_avulso: pedido.valor_pago_avulso ?? null,
     dia_pagamento_parcelas: pedido.dia_pagamento_parcelas || null,
     etapa_pedido: pedido.etapa_pedido || 'pre_pedido',
     tem_frete: pedido.tem_frete ?? true,
@@ -387,6 +391,8 @@ export async function salvarPedidoNoBanco(pedido: Pedido): Promise<boolean> {
     estoque_baixado: pedido.estoque_baixado ?? false,
     foto_caminhao_carregado: pedido.foto_caminhao_carregado || null,
     data_confirmacao_carga: pedido.data_confirmacao_carga || null,
+    entrega_confirmada: pedido.entrega_confirmada ?? false,
+    data_confirmacao_entrega: pedido.data_confirmacao_entrega || null,
   };
 
   const payload = {
@@ -492,6 +498,10 @@ export function parsePedidosDoBanco(rows: any[]): Pedido[] {
         meta.valor_adiantamento != null
           ? Number(meta.valor_adiantamento)
           : anterior?.valor_adiantamento ?? null,
+      valor_pago_avulso:
+        meta.valor_pago_avulso != null
+          ? Number(meta.valor_pago_avulso)
+          : anterior?.valor_pago_avulso ?? null,
       dia_pagamento_parcelas:
         meta.dia_pagamento_parcelas ?? anterior?.dia_pagamento_parcelas ?? null,
       etapa_pedido:
@@ -521,6 +531,9 @@ export function parsePedidosDoBanco(rows: any[]): Pedido[] {
         meta.foto_caminhao_carregado ?? anterior?.foto_caminhao_carregado ?? null,
       data_confirmacao_carga:
         meta.data_confirmacao_carga ?? anterior?.data_confirmacao_carga ?? null,
+      entrega_confirmada: meta.entrega_confirmada ?? anterior?.entrega_confirmada ?? false,
+      data_confirmacao_entrega:
+        meta.data_confirmacao_entrega ?? anterior?.data_confirmacao_entrega ?? null,
       status_financeiro: row.status_financeiro || 'pendente',
       tipo_operacao: row.tipo_operacao || 'venda',
       observacao: cleanObs,
@@ -691,4 +704,46 @@ export function comprimirFotoCaminhao(file: File, maxWidth = 800, quality = 0.65
     reader.onerror = () => reject(new Error('Erro ao processar foto'));
     reader.readAsDataURL(file);
   });
+}
+
+export function formatarDataBR(dataStr?: string | null, fallback = '-'): string {
+  if (!dataStr) return fallback;
+  const s = String(dataStr).trim();
+  if (!s) return fallback;
+  // Já está no formato DD/MM/AAAA
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) return s.slice(0, 10);
+  // Formato ISO YYYY-MM-DD (com ou sem hora)
+  const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    return `${match[3]}/${match[2]}/${match[1]}`;
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  }
+  return s;
+}
+
+export function formatarDataHoraBR(dataStr?: string | null, fallback = '-'): string {
+  if (!dataStr) return fallback;
+  const s = String(dataStr).trim();
+  if (!s) return fallback;
+  // Já formatado em pt-BR (ex: 26/11/2026 14:30 ou 26/11/2026 às 14:30)
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) return s;
+  // Apenas data YYYY-MM-DD sem hora
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return formatarDataBR(s, fallback);
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) {
+    return d.toLocaleString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  return s;
 }

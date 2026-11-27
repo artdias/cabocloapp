@@ -25,6 +25,7 @@ import {
   carregarEstoqueDoBanco,
   salvarLembretesEstadoNoBanco,
   carregarLembretesEstadoDoBanco,
+  formatarDataBR,
 } from '@/lib/supabase';
 import {
   SeletorAlfineteMapa,
@@ -35,6 +36,7 @@ import {
   FluxoPedidosCarregamento,
   calcularTotaisPedido,
 } from '@/components/FluxoPedidosCarregamento';
+import RelatoriosPainel from '@/components/RelatoriosPainel';
 import {
   Mic,
   Square,
@@ -486,7 +488,7 @@ export default function CabocloAgroCRM() {
   >('todos');
   const [adiarModal, setAdiarModal] = useState<{ id: string; nome: string } | null>(null);
   // Estados da Aba Financeiro
-  const [subAbaFinanceiro, setSubAbaFinanceiro] = useState<'periodo' | 'clientes' | 'lancamentos'>('periodo');
+  const [subAbaFinanceiro, setSubAbaFinanceiro] = useState<'periodo' | 'clientes' | 'lancamentos' | 'relatorios'>('periodo');
   const [filtroPeriodoFinanceiro, setFiltroPeriodoFinanceiro] = useState<'mes_atual' | '30dias' | 'ano_atual' | 'todos'>('mes_atual');
 
   // Estado para Sanfona (Expandir/Recolher Detalhes dos Contatos)
@@ -1971,7 +1973,9 @@ export default function CabocloAgroCRM() {
     }
   ) => {
     let msg = '';
-    const dataCompraFormatada = detalhesPedido?.data_compra || 'recente';
+    const dataCompraFormatada = detalhesPedido?.data_compra
+      ? formatarDataBR(detalhesPedido.data_compra, 'recente')
+      : 'recente';
     const prod = detalhesPedido?.produto || 'Silagem de Milho';
     const qtd = detalhesPedido?.quantidade || 'quantidade habitual';
     const end = detalhesPedido?.endereco_fazenda || 'na fazenda do cliente';
@@ -2512,8 +2516,8 @@ export default function CabocloAgroCRM() {
                                   </span>
                                   {(p.data_carregamento || p.data_entrega) && (
                                     <span className="text-[10px] text-amber-300 font-semibold block">
-                                      📅 Carregar: {p.data_carregamento || 'A definir'} • Entrega:{' '}
-                                      {p.data_entrega || 'A definir'}
+                                      📅 Carregar: {formatarDataBR(p.data_carregamento, 'A definir')} • Entrega:{' '}
+                                      {formatarDataBR(p.data_entrega, 'A definir')}
                                     </span>
                                   )}
                                 </div>
@@ -2666,7 +2670,7 @@ export default function CabocloAgroCRM() {
                                             : 'text-amber-300 font-semibold'
                                         }
                                       >
-                                        📅 Data Pagto: {p.data_vencimento_pagamento}
+                                        📅 Data Pagto: {formatarDataBR(p.data_vencimento_pagamento)}
                                       </span>
                                     )}
                                     {totais.qtdParcelas > 1 && (
@@ -2865,7 +2869,7 @@ export default function CabocloAgroCRM() {
                                     </span>
                                   </div>
                                   <span className="text-[11px] text-amber-300 block font-medium">
-                                    Previsão de término: {p.data_previsao_fim_estoque}
+                                    Previsão de término: {formatarDataBR(p.data_previsao_fim_estoque)}
                                   </span>
                                   <span className="text-[10px] text-slate-400">
                                     Última compra: {p.produto} ({p.quantidade})
@@ -3954,11 +3958,11 @@ export default function CabocloAgroCRM() {
         {/* ABA 5: FINANCEIRO */}
         {activeTab === 'financeiro' && (
           <div className="space-y-4">
-            {/* Alternador de Visões: Período, Por Cliente, Lançamentos */}
-            <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+            {/* Alternador de Visões: Período, Por Cliente, Lançamentos, Relatórios */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
               <button
                 onClick={() => setSubAbaFinanceiro('periodo')}
-                className={`flex-1 py-1.5 rounded-lg font-bold transition-all text-center ${
+                className={`py-1.5 px-2 rounded-lg font-bold transition-all text-center ${
                   subAbaFinanceiro === 'periodo'
                     ? 'bg-emerald-600 text-white shadow'
                     : 'text-slate-400 hover:text-slate-200'
@@ -3968,7 +3972,7 @@ export default function CabocloAgroCRM() {
               </button>
               <button
                 onClick={() => setSubAbaFinanceiro('clientes')}
-                className={`flex-1 py-1.5 rounded-lg font-bold transition-all text-center ${
+                className={`py-1.5 px-2 rounded-lg font-bold transition-all text-center ${
                   subAbaFinanceiro === 'clientes'
                     ? 'bg-sky-600 text-white shadow'
                     : 'text-slate-400 hover:text-slate-200'
@@ -3978,13 +3982,23 @@ export default function CabocloAgroCRM() {
               </button>
               <button
                 onClick={() => setSubAbaFinanceiro('lancamentos')}
-                className={`flex-1 py-1.5 rounded-lg font-bold transition-all text-center ${
+                className={`py-1.5 px-2 rounded-lg font-bold transition-all text-center ${
                   subAbaFinanceiro === 'lancamentos'
                     ? 'bg-purple-600 text-white shadow'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 📜 Lançamentos
+              </button>
+              <button
+                onClick={() => setSubAbaFinanceiro('relatorios')}
+                className={`py-1.5 px-2 rounded-lg font-bold transition-all text-center ${
+                  subAbaFinanceiro === 'relatorios'
+                    ? 'bg-amber-500 text-slate-950 shadow'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                📊 Relatórios
               </button>
             </div>
 
@@ -4310,6 +4324,14 @@ export default function CabocloAgroCRM() {
                   })}
                 </div>
               </div>
+            )}
+            {/* VISÃO 4: RELATÓRIOS PERSONALIZADOS (CSV / PDF) */}
+            {subAbaFinanceiro === 'relatorios' && (
+              <RelatoriosPainel
+                pedidos={pedidos}
+                contatos={contatos}
+                estoque={estoque}
+              />
             )}
           </div>
         )}
